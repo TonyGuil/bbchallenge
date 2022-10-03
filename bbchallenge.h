@@ -21,10 +21,11 @@
 
 enum class DeciderTag : uint32_t
   {
-  NONE                     = 1,
+  NONE                     = 0,
   CYCLERS                  = 1,
   TRANSLATED_CYCLERS_RIGHT = 2,
   TRANSLATED_CYCLERS_LEFT  = 3,
+  BACKWARD_REASONING       = 4,
   } ;
 
 enum class StepResult : uint8_t
@@ -41,6 +42,27 @@ struct StateDesc
   uint8_t Next ;
   } ;
 
+//
+// Endianness (data files are big-endian, our platform is little-endian)
+//
+
+inline uint32_t Load32 (const void* p)
+  {
+#if BIG_ENDIAN
+  return *(uint32_t*)p ;
+#else
+  return __builtin_bswap32 (*(uint32_t*)p) ;
+#endif
+  }
+
+inline void Save32 (void* p, uint32_t n)
+  {
+#if BIG_ENDIAN
+  *(uint32_t*)p = n ;
+#else
+  *(uint32_t*)p = __builtin_bswap32 (n) ;
+#endif
+  }
 
 // inline uint32_t Read32 (FILE* fp)
 //

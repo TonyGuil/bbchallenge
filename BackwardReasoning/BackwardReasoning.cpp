@@ -26,10 +26,9 @@
 
 #include "..\bbchallenge.h"
 
-// This Decider can't offer much in the way of verification data. It just saves the
-// max depth and the max absolute value of the tape head. No verifier program has
-// been written:
-#define VERIF_INFO_LENGTH 8
+// This Decider can't offer much in the way of verification data. It just saves
+// Leftmost, Rightmost, and MaxDepth. No verifier program has been written:
+#define VERIF_INFO_LENGTH 12
 
 // We need a special value to indicate that the contents of a cell on the tape
 // are so far undetermined:
@@ -112,8 +111,8 @@ public:
   uint32_t DepthLimit ;
   uint32_t SpaceLimit ;
 
-  uint32_t MaxDepth ;
   int Leftmost, Rightmost ;
+  uint32_t MaxDepth ;
   } ;
 
 int main (int argc, char** argv)
@@ -158,6 +157,10 @@ int main (int argc, char** argv)
   uint32_t nSpaceLimitedDecided = 0 ;
   int LastPercent = -1 ;
   uint8_t MachineSpec[MACHINE_SPEC_SIZE] ;
+  uint8_t VerificationEntry[VERIF_ENTRY_LENGTH] ;
+  Save32 (VerificationEntry + 4, uint32_t (DeciderTag::BACKWARD_REASONING)) ;
+  Save32 (VerificationEntry + 8, VERIF_INFO_LENGTH) ;
+
   BackwardReasoning Decider (CommandLineParams::DepthLimit, MAX_SPACE) ;
   for (uint32_t Entry = 0 ; Entry < nTotal ; Entry++)
     {
@@ -165,7 +168,12 @@ int main (int argc, char** argv)
     Reader.Read (SeedDatabaseIndex, MachineSpec) ;
     if (Decider.Run (MachineSpec))
       {
-      Write32 (fpVerif, SeedDatabaseIndex) ;
+      Save32 (VerificationEntry, SeedDatabaseIndex) ;
+      Save32 (VerificationEntry + 12, Decider.Leftmost) ;
+      Save32 (VerificationEntry + 16, Decider.Rightmost) ;
+      Save32 (VerificationEntry + 20, Decider.MaxDepth) ;
+      if (fwrite (VerificationEntry, VERIF_ENTRY_LENGTH, 1, fpVerif) != 1)
+        printf ("Write error\n"), exit (1) ;
       nDecided++ ;
       if (Entry < nTimeLimited) nTimeLimitedDecided++ ;
       else nSpaceLimitedDecided++ ;

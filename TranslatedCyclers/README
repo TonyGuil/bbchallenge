@@ -1,0 +1,29 @@
+To compile with g++ 7.3.0, run Compile.bat.
+To generate umf and dvf files, run Run.bat.
+
+With a time limit of 10,000 steps, this Decider takes the 77,434,826 machines undecided by the Cyclers Decider and classifies 73,860,604 machines as non-halting. Time: 5m 38s.
+
+The Verifier verifies these 73,860,604 machines in a time of 7m 9s.
+
+The Decider is capable of many more steps. With time limit set to 4,000,000 steps, it found 568 more Translated Cyclers. This took more than 12 hours, but verification of the TC_4000000.dvf file takes just 0.3 seconds. The Verifier is significantly simpler than the Decider, so it seems reasonable to accept these 568 machines as decided.
+
+The longest Translated Cycler found took 3,037,316 steps. This suggests that there may be more out there. Before I try run the Decided with time limit 10,000,000 (which will necessitate setting the number of threads to 1), I will prune the database as much as possible using all the unaccepted deciders out there.
+
+Format of TranslatedCyclers Verification File
+---------------------------------------------
+  uint nEntries
+  VerificationEntry[nEntries]
+
+  VerificationEntry format:
+    uint SeedDatabaseIndex
+    uint DeciderType       -- 2 = TranslatedCyclers (translated to the right)
+                           -- 3 = TranslatedCyclers (translated to the left)
+    uint InfoLength        -- 32 = length of decider-specific info for this machine
+    int Leftmost           -- Leftmost tape head position
+    int Rightmost          -- Rightmost tape head position
+    uint State             -- State of machine in initial and final configurations
+    int InitialTapeHead    -- Tape head in initial configuration
+    int FinalTapeHead      -- Tape head in final configuration
+    uint InitialStepCount  -- Number of steps to reach initial configuration
+    uint FinalStepCount    -- Number of steps to reach final configuration
+    uint MatchLength       -- Length of match

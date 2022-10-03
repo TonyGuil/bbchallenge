@@ -1,6 +1,8 @@
 NOTE: These programs expect SeedDatabase.bin in the root directory. This file is too big for me to publish on github, so you will need to provide your own. It is simply the original seed database file from the bbchallenge site, with a 30-byte header and a 30-byte entry for each machine.
 
-Currently implemented deciders (this list will grow):
+Currently implemented deciders:
+  Cyclers
+  TranslatedCyclers
   BackwardReasoning
 
 These deciders take as input an Undecided Machine File (umf) from the previous decider and generate a (hopefully shorter) umf file as output, together with a Decider Verification File (dvf) that can be used by a Verifier to verify that all the decided machines are correct.
@@ -51,8 +53,8 @@ Format of Decider-specific info
   int Leftmost            -- Leftmost tape head position
   int Rightmost           -- Rightmost tape head position
   uint State              -- State of machine in initial and final configurations
-  int32_t InitialTapeHead -- Tape head in initial configuration
-  int32_t FinalTapeHead   -- Tape head in final configuration
+  int InitialTapeHead     -- Tape head in initial configuration
+  int FinalTapeHead       -- Tape head in final configuration
   uint InitialStepCount   -- Number of steps to reach initial configuration
   uint FinalStepCount     -- Number of steps to reach final configuration
-  uint32_t MatchLength    -- Length of match
+  uint MatchLength        -- Length of match
