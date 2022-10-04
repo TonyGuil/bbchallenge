@@ -174,7 +174,7 @@ int main (int argc, char** argv)
       Save32 (VerificationEntry + 12, Decider.Leftmost) ;
       Save32 (VerificationEntry + 16, Decider.Rightmost) ;
       Save32 (VerificationEntry + 20, Decider.MaxDepth) ;
-      Save32 (VerificationEntry + 20, Decider.nNodes) ;
+      Save32 (VerificationEntry + 24, Decider.nNodes) ;
       if (fwrite (VerificationEntry, VERIF_ENTRY_LENGTH, 1, fpVerif) != 1)
         printf ("Write error\n"), exit (1) ;
       nDecided++ ;
