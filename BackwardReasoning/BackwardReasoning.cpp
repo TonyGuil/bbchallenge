@@ -27,8 +27,8 @@
 #include "..\bbchallenge.h"
 
 // This Decider can't offer much in the way of verification data. It just saves
-// Leftmost, Rightmost, and MaxDepth. No verifier program has been written:
-#define VERIF_INFO_LENGTH 12
+// Leftmost, Rightmost, MaxDepth, and nNodes. No verifier program has been written:
+#define VERIF_INFO_LENGTH 16
 
 // We need a special value to indicate that the contents of a cell on the tape
 // are so far undetermined:
@@ -111,8 +111,10 @@ public:
   uint32_t DepthLimit ;
   uint32_t SpaceLimit ;
 
+  // Stats
   int Leftmost, Rightmost ;
   uint32_t MaxDepth ;
+  uint32_t nNodes ;
   } ;
 
 int main (int argc, char** argv)
@@ -172,6 +174,7 @@ int main (int argc, char** argv)
       Save32 (VerificationEntry + 12, Decider.Leftmost) ;
       Save32 (VerificationEntry + 16, Decider.Rightmost) ;
       Save32 (VerificationEntry + 20, Decider.MaxDepth) ;
+      Save32 (VerificationEntry + 20, Decider.nNodes) ;
       if (fwrite (VerificationEntry, VERIF_ENTRY_LENGTH, 1, fpVerif) != 1)
         printf ("Write error\n"), exit (1) ;
       nDecided++ ;
@@ -237,7 +240,7 @@ bool BackwardReasoning::Run (const uint8_t* MachineSpec)
   StartConfig.State = 0 ;
   StartConfig.TapeHead = 0 ;
 
-  MaxDepth = 0 ;
+  MaxDepth = nNodes = 0 ;
   Leftmost = Rightmost = 0 ;
 
   return Recurse (0, StartConfig) ;
@@ -246,6 +249,7 @@ bool BackwardReasoning::Run (const uint8_t* MachineSpec)
 bool BackwardReasoning::Recurse (uint32_t Depth, const Configuration& Config)
   {
   if (Depth == DepthLimit) return false ; // Search too deep, no decision possible
+  nNodes++ ;
   if (Depth > MaxDepth) MaxDepth = Depth ;
 
   Configuration PrevConfig ;

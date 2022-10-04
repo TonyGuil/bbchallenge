@@ -8,3 +8,17 @@ This Decider takes the 3,574,222 undecided machines from the TranslatedCyclers D
 The accepted Decider from the bbchallenge site classified 2,036,010 machines as halting. The discrepancy proved to be due to a bug in the accepted Decider, which incorrectly classified twelve machines as non-halting.
 
 Unfortunately the BackwardReasoning machines are not amenable to verification in the same way as Cyclers and TranslatedCyclers. So acceptance is difficult to justify, as there seems to be no better method than simply analysing the source code for bugs...
+
+The format of the Verification File BackwardReasoning.dvf:
+
+  uint nEntries
+  VerificationEntry[nEntries]
+
+  VerificationEntry format:
+    uint SeedDatabaseIndex
+    uint DeciderType       -- 4 = BackwardReasoning
+    uint InfoLength        -- 16 = length of decider-specific info
+    int Leftmost           -- Leftmost tape head position
+    int Rightmost          -- Rightmost tape head position
+    uint MaxDepth
+    uint nNodes
