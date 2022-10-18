@@ -1,0 +1,30 @@
+To compile with g++ 7.3.0, run Compile.bat.
+To generate umf and dvf files, run Run.bat.
+
+This Decider takes the 1,538,624 undecided machines from the BackwardReasoning Decider and classifies 1,020,634 machines as non-halting. Time: 160 minutes.
+
+lijil's HaltingSegments Decider from the bbchallenge site classified 995,554 machines as halting. All of these machines are classified as non-halting by my Decider. I think the extra 25,080 machines are due to my segment-matching criterion: a segment is found to _satisfy_ a previously examined segment (thus making deeper search unnecessary) if the state is the same, and the current tape contents are compatible with the previous contents, perhaps shifted left or right. So for example the segment
+
+D:  . 1 0 1 1 [0] 0 1 . .
+
+satisfies the previous segment
+
+D:  . . . . 0 1 1 [0] 0 .
+
+because it matches all the *determined* tape cells in the previous segment, albeit shifted left by 2.
+
+For what it's worth, the format of the Verification File HaltingSegments.dvf is:
+
+  uint nEntries
+  VerificationEntry[nEntries]
+
+  VerificationEntry format:
+    uint SeedDatabaseIndex
+    uint DeciderType       -- 5 = HaltingSegments
+    uint InfoLength        -- 16 = length of decider-specific info
+    int Leftmost           -- Leftmost tape head position
+    int Rightmost          -- Rightmost tape head position
+    uint MaxDepth
+    uint nNodes
+
+This is not much use to anybody, and if I think of anything better I will update.
