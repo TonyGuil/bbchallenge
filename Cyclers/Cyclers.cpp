@@ -333,7 +333,7 @@ void CommandLineParams::PrintHelpAndExit (int status)
   {
   printf (R"*RAW*(
 Cyclers <param> <param>...
-  <param>: -D<database>           Seed database file (defaults to SeedDatabase.bin)
+  <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
            -V<verification file>  Output file: verification data for decided machines
            -U<undecided file>     Output file: remaining undecided machines
            -T<time limit>         Max no. of steps

@@ -1,9 +1,12 @@
 To compile with g++ 7.3.0, run Compile.bat.
 To generate umf and dvf files, run Run.bat.
 
-This Decider takes the 1,538,624 undecided machines from the BackwardReasoning Decider and classifies 1,020,634 machines as non-halting. Time: 160 minutes.
+This Decider takes the 1,538,624 undecided machines from the BackwardReasoning Decider and classifies 1,022,541 machines as non-halting. Time: 4.5 hours. Search paramaters were:
+  MaxDepth = 2,000
+  nNodes = 100,000
+  MaxSegmentWidth = 35
 
-lijil's HaltingSegments Decider from the bbchallenge site classified 995,554 machines as halting. All of these machines are classified as non-halting by my Decider. I think the extra 25,080 machines are due to my segment-matching criterion: a segment is found to _satisfy_ a previously examined segment (thus making deeper search unnecessary) if the state is the same, and the current tape contents are compatible with the previous contents, perhaps shifted left or right. So for example the segment
+lijil's HaltingSegments Decider from the bbchallenge site classified 995,554 machines as halting. All of these machines are classified as non-halting by my Decider. Some of the 26,987 new machines are due to the deeper search, but most of them are due to my segment-matching criterion: a segment is found to _satisfy_ a previously examined segment (thus making deeper search unnecessary) if the state is the same, and the current tape contents are compatible with the previous contents, perhaps shifted left or right. So for example the segment
 
 D:  . 1 0 1 1 [0] 0 1 . .
 
@@ -24,7 +27,8 @@ For what it's worth, the format of the Verification File HaltingSegments.dvf is:
     uint InfoLength        -- 16 = length of decider-specific info
     int Leftmost           -- Leftmost tape head position
     int Rightmost          -- Rightmost tape head position
-    uint MaxDepth
-    uint nNodes
+    uint MaxDepth          -- Max search depth
+    uint nNodes            -- Max number of nodes in the search tree
+    uint MaxSegmentWidth   -- Must be an odd number
 
 This is not much use to anybody, and if I think of anything better I will update.

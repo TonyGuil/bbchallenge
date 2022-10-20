@@ -1,6 +1,6 @@
 // HaltingSegments <param> <param>...
 //
-//   <param>: -S<seed database>      Seed database file (defaults to SeedDatabase.bin)
+//   <param>: -S<seed database>      Seed database file (defaults to ../SeedDatabase.bin)
 //            -I<input file>         Input file: list of machines to be analysed
 //            -V<verification file>  Output file: verification data for decided machines
 //            -U<undecided file>     Output file: remaining undecided machines
@@ -33,9 +33,8 @@
 
 #define CHUNK_SIZE 256 // Number of machines to assign to each thread
 
-// This Decider can't offer much in the way of verification data. It just saves
-// Leftmost, Rightmost, MaxDepth, and nNodes. No verifier program has been written:
-#define VERIF_INFO_LENGTH 16
+// Decider-specific Verification Data:
+#define VERIF_INFO_LENGTH 20
 
 // We need a special value to indicate that the contents of a cell on the tape
 // are so far undetermined:
@@ -63,7 +62,6 @@ public:
   static uint32_t TestMachine ;   static bool TestMachinePresent ;
   static uint32_t MachineLimit ;  static bool MachineLimitPresent ;
   static bool TraceOutput ;
-  static bool PreStore ;
   static void Parse (int argc, char** argv) ;
   static void PrintHelpAndExit [[noreturn]] (int status) ;
   } ;
@@ -78,7 +76,6 @@ uint32_t CommandLineParams::NodeLimit ;     bool CommandLineParams::NodeLimitPre
 uint32_t CommandLineParams::nThreads ;      bool CommandLineParams::nThreadsPresent ;
 uint32_t CommandLineParams::TestMachine ;   bool CommandLineParams::TestMachinePresent ;
 bool CommandLineParams::TraceOutput ;
-bool CommandLineParams::PreStore ;
 uint32_t CommandLineParams::MachineLimit ;  bool CommandLineParams::MachineLimitPresent ;
 
 //
@@ -235,7 +232,7 @@ public:
   uint32_t SpaceLimit ;
   uint32_t NodeLimit ;
 
-  uint32_t Width ;
+  uint32_t HalfWidth ; // Max absolute value of TapeHead
 
   //
   // STATISTICS
@@ -432,14 +429,14 @@ int main (int argc, char** argv)
   printf ("\nDecided %d out of %d\n", nDecided, nTimeLimited + nSpaceLimited) ;
   printf ("Elapsed time %.3f\n", (double)Timer / CLOCKS_PER_SEC) ;
 
-  printf ("\n") ;
-  for (uint32_t Width = 3 ; Width <= CommandLineParams::WidthLimit ; Width++)
+  printf ("\nMax search depth for decided machines by segment width:") ;
+  for (uint32_t HalfWidth = 3 ; 2 * HalfWidth <= CommandLineParams::WidthLimit + 1 ; HalfWidth++)
     {
     uint32_t Max = 0 ;
     for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
-      if (DeciderArray[i] -> MaxDecidingDepth[Width] > Max)
-        Max = DeciderArray[i] -> MaxDecidingDepth[Width] ;
-    if (Max) printf ("%d: %d\n", Width, Max) ;
+      if (DeciderArray[i] -> MaxDecidingDepth[HalfWidth] > Max)
+        Max = DeciderArray[i] -> MaxDecidingDepth[HalfWidth] ;
+    if (Max) printf ("%d: %d\n", 2 * HalfWidth - 1, Max) ;
     }
   }
 
@@ -449,7 +446,6 @@ void HaltingSegments::ThreadFunction (int nMachines, const uint32_t* MachineInde
   while (nMachines--)
     {
     SeedDatabaseIndex = *MachineIndexList++ ;
-////printf ("%d\n", SeedDatabaseIndex) ;
     if (Run (MachineSpecList))
       {
       Save32 (VerificationEntryList, SeedDatabaseIndex) ;
@@ -459,6 +455,7 @@ void HaltingSegments::ThreadFunction (int nMachines, const uint32_t* MachineInde
       Save32 (VerificationEntryList + 16, Rightmost) ;
       Save32 (VerificationEntryList + 20, MaxDepth) ;
       Save32 (VerificationEntryList + 24, nNodes) ;
+      Save32 (VerificationEntryList + 28, 2 * HalfWidth - 1) ;
       }
     else Save32 (VerificationEntryList + 4, uint32_t (DeciderTag::NONE)) ;
 
@@ -497,12 +494,12 @@ bool HaltingSegments::Run (const uint8_t* MachineSpec)
         }
       }
 
-  for (Width = 3 ; Width <= CommandLineParams::WidthLimit ; Width++)
+  for (HalfWidth = 3 ; 2 * HalfWidth <= CommandLineParams::WidthLimit + 1 ; HalfWidth++)
     {
     // Start in state 0 with unspecified tape
-    memset (Tape - Width + 1, TAPE_ANY, 2 * Width - 1) ;
-    Tape[-Width] = TAPE_SENTINEL_LEFT ;
-    Tape[Width] = TAPE_SENTINEL_RIGHT ;
+    memset (Tape - HalfWidth + 1, TAPE_ANY, 2 * HalfWidth - 1) ;
+    Tape[-HalfWidth] = TAPE_SENTINEL_LEFT ;
+    Tape[HalfWidth] = TAPE_SENTINEL_RIGHT ;
     Configuration StartConfig ;
     StartConfig.State = 0 ;
     StartConfig.TapeHead = 0 ;
@@ -518,8 +515,8 @@ bool HaltingSegments::Run (const uint8_t* MachineSpec)
 
     if (Recurse (0, StartConfig))
       {
-      if (MaxDepth > MaxDecidingDepth[Width])
-        MaxDecidingDepth[Width] = MaxDepth ;
+      if (MaxDepth > MaxDecidingDepth[HalfWidth])
+        MaxDecidingDepth[HalfWidth] = MaxDepth ;
       return true ;
       }
     }
@@ -535,25 +532,24 @@ bool HaltingSegments::Recurse (uint32_t Depth, const Configuration& Config)
   // Check for possible match with starting configuration
   if (Config.State == 1)
     {
-    int i ; for (i = 1 - Width ; i < int(Width) ; i++)
+    int i ; for (i = 1 - HalfWidth ; i < int(HalfWidth) ; i++)
       if (Tape[i] != 0 && Tape[i] != TAPE_ANY) break ;
-    if (i >= (int)Width) return false ;
+    if (i >= (int)HalfWidth) return false ;
     }
 
   if (++nNodes > NodeLimit) return false ;
 
   if (CommandLineParams::TraceOutput)
     {
-    for (int i = 1 - Width ; i < (int)Width ; i++)
+    for (int i = 1 - HalfWidth ; i < (int)HalfWidth ; i++)
       {
       printf (i == Config.TapeHead ? "[" : i == Config.TapeHead + 1 ? "]" : " ") ;
       printf ("%c", "01*."[Tape[i]]) ;
       }
-    printf (Config.TapeHead == (int)(Width - 1) ? "]" : " ") ;
+    printf (Config.TapeHead == (int)(HalfWidth - 1) ? "]" : " ") ;
     printf ("%*s%c\n", Depth, "", Config.State + '@') ;
     }
 
-#if 1
   // If we've seen this already, return true
   if (Tape[Config.TapeHead] <= 1)
     {
@@ -564,9 +560,8 @@ bool HaltingSegments::Recurse (uint32_t Depth, const Configuration& Config)
       return true ;
       }
 
-    if (CommandLineParams::PreStore) Tree = Insert (Tree, Tape + Config.TapeHead) ;
+    Tree = Insert (Tree, Tape + Config.TapeHead) ;
     }
-#endif
 
   Configuration PrevConfig ;
   for (const auto& T : TransitionTable[Config.State])
@@ -619,16 +614,6 @@ bool HaltingSegments::Recurse (uint32_t Depth, const Configuration& Config)
     Tape[PrevConfig.TapeHead] = Cell ;
     }
 
-#if 1
-  if (!CommandLineParams::PreStore)
-    if (Tape[Config.TapeHead] <= 1)
-      {
-      CompoundTree*& Tree = AlreadySeen[Config.State][Tape[Config.TapeHead]] ;
-      if (!FindShorterOrEqual (Tree, Tape + Config.TapeHead))
-        Tree = Insert (Tree, Tape + Config.TapeHead) ;
-      }
-#endif
-
   // No search returned false, i.e. all searches terminated at a finite depth.
   // So we can't reach this state from the starting position:
   return true ;
@@ -643,39 +628,35 @@ bool HaltingSegments::ExitSegmentLeft (uint32_t Depth, uint8_t State)
 
   if (CommandLineParams::TraceOutput)
     {
-    for (int i = 1 - Width ; i < (int)Width ; i++)
+    for (int i = 1 - HalfWidth ; i < (int)HalfWidth ; i++)
       printf (" %c", "01*."[Tape[i]]) ;
     printf (" %*s*\n", Depth, "") ;
     }
 
   // Check for all zeroes or unset
-  int i ; for (i = 1 - Width ; i < int(Width) ; i++)
+  int i ; for (i = 1 - HalfWidth ; i < int(HalfWidth) ; i++)
     if (Tape[i] != 0 && Tape[i] != TAPE_ANY) break ;
-  if (i >= (int)Width) return false ;
+  if (i >= (int)HalfWidth) return false ;
 
   // If we've seen this already, return true
-  if (FindShorterOrEqual (ExitedLeft, Tape - Width + 1))
+  if (FindShorterOrEqual (ExitedLeft, Tape - HalfWidth + 1))
     {
     if (CommandLineParams::TraceOutput) printf ("Left duplicate\n") ;
     return true ;
     }
 
-  if (CommandLineParams::PreStore) ExitedLeft = Insert (ExitedLeft, Tape - Width + 1) ;
+  ExitedLeft = Insert (ExitedLeft, Tape - HalfWidth + 1) ;
 
   Configuration PrevConfig ;
-  PrevConfig.TapeHead = 1 - Width ;
-  uint8_t Cell = Tape[1 - Width] ;
+  PrevConfig.TapeHead = 1 - HalfWidth ;
+  uint8_t Cell = Tape[1 - HalfWidth] ;
   for (const auto& T : LeftOfSegment[Cell])
     {
     PrevConfig.State = T.State ;
-    Tape[1 - Width] = T.Read ;
+    Tape[1 - HalfWidth] = T.Read ;
     if (!Recurse (Depth, PrevConfig)) return false ;
-    Tape[1 - Width] = Cell ;
+    Tape[1 - HalfWidth] = Cell ;
     }
-
-  if (!CommandLineParams::PreStore)
-    if (!FindShorterOrEqual (ExitedLeft, Tape - Width + 1))
-      ExitedLeft = Insert (ExitedLeft, Tape - Width + 1) ;
 
   return true ;
   }
@@ -689,39 +670,35 @@ bool HaltingSegments::ExitSegmentRight (uint32_t Depth, uint8_t State)
 
   if (CommandLineParams::TraceOutput)
     {
-    for (int i = 1 - Width ; i < (int)Width ; i++)
+    for (int i = 1 - HalfWidth ; i < (int)HalfWidth ; i++)
       printf (" %c", "01*."[Tape[i]]) ;
     printf (" %*s*\n", Depth, "") ;
     }
 
   // Check for all zeroes or unset
-  int i ; for (i = 1 - Width ; i < int(Width) ; i++)
+  int i ; for (i = 1 - HalfWidth ; i < int(HalfWidth) ; i++)
     if (Tape[i] != 0 && Tape[i] != TAPE_ANY) break ;
-  if (i >= (int)Width) return false ;
+  if (i >= (int)HalfWidth) return false ;
 
   // If we've seen this already, return true
-  if (FindShorterOrEqual (ExitedRight, Tape + Width - 1))
+  if (FindShorterOrEqual (ExitedRight, Tape + HalfWidth - 1))
     {
     if (CommandLineParams::TraceOutput) printf ("Right duplicate\n") ;
     return true ;
     }
 
-  if (CommandLineParams::PreStore) ExitedRight = Insert (ExitedRight, Tape + Width - 1) ;
+  ExitedRight = Insert (ExitedRight, Tape + HalfWidth - 1) ;
 
   Configuration PrevConfig ;
-  PrevConfig.TapeHead = Width - 1 ;
-  uint8_t Cell = Tape[Width - 1] ;
+  PrevConfig.TapeHead = HalfWidth - 1 ;
+  uint8_t Cell = Tape[HalfWidth - 1] ;
   for (const auto& T : RightOfSegment[Cell])
     {
     PrevConfig.State = T.State ;
-    Tape[Width - 1] = T.Read ;
+    Tape[HalfWidth - 1] = T.Read ;
     if (!Recurse (Depth, PrevConfig)) return false ;
-    Tape[Width - 1] = Cell ;
+    Tape[HalfWidth - 1] = Cell ;
     }
-
-  if (!CommandLineParams::PreStore)
-    if (!FindShorterOrEqual (ExitedRight, Tape + Width - 1))
-      ExitedRight = Insert (ExitedRight, Tape + Width - 1) ;
 
   return true ;
   }
@@ -899,6 +876,7 @@ void CommandLineParams::Parse (int argc, char** argv)
 
       case 'W':
         WidthLimit = atoi (&argv[0][2]) ;
+        if (!(WidthLimit & 1)) printf ("Segment width limit must be odd\n"), exit (1) ;
         WidthLimitPresent = true ;
         break ;
 
@@ -921,10 +899,6 @@ void CommandLineParams::Parse (int argc, char** argv)
         TraceOutput = true ;
         break ;
 
-      case 'P':
-        PreStore = true ;
-        break ;
-
       case 'L':
         MachineLimit = atoi (&argv[0][2]) ;
         MachineLimitPresent = true ;
@@ -940,7 +914,7 @@ void CommandLineParams::Parse (int argc, char** argv)
     printf ("Input file not specified\n"), PrintHelpAndExit (1) ;
 
   if (!DepthLimitPresent) printf ("Depth limit not specified\n"), PrintHelpAndExit (1) ;
-  if (!WidthLimitPresent) printf ("Width limit not specified\n"), PrintHelpAndExit (1) ;
+  if (!WidthLimitPresent) printf ("HalfWidth limit not specified\n"), PrintHelpAndExit (1) ;
   if (!NodeLimitPresent) printf ("Node limit not specified\n"), PrintHelpAndExit (1) ;
   }
 
@@ -948,17 +922,16 @@ void CommandLineParams::PrintHelpAndExit (int status)
   {
   printf (R"*RAW*(
 HaltingSegments <param> <param>...
-  <param>: -S<seed database>      Seed database file (defaults to SeedDatabase.bin)
+  <param>: -S<seed database>      Seed database file (defaults to ../SeedDatabase.bin)
            -I<input file>         Input file: list of machines to be analysed
            -V<verification file>  Output file: verification data for decided machines
            -U<undecided file>     Output file: remaining undecided machines
            -D<depth limit>        Max search depth
-           -W<width limit>        Max absolute value of tape head
+           -W<width limit>        Max segment width (must be odd)
            -N<node limit>         Max number of nodes in search
            -M<threads>            Number of threads to run
            -X<test machine>       Machine to test
            -T                     Print trace output
-           -P                     Pre-store visited segments
            -L<machine limit>      Max no. of machines to test
 )*RAW*") ;
   exit (status) ;

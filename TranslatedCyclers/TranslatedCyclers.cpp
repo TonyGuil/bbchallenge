@@ -4,7 +4,7 @@
 //
 // To run:
 //   TranslatedCyclers <param> <param>...
-//     <param>: -D<database>           Seed database file (defaults to SeedDatabase.bin)
+//     <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
 //              -I<input file>         Input file: list of machines to be analysed (umf)
 //              -V<verification file>  Output file: verification data for decided machines (dvf)
 //              -U<undecided file>     Output file: remaining undecided machines (umf)
@@ -556,7 +556,7 @@ void CommandLineParams::PrintHelpAndExit (int status)
   {
   printf (R"*RAW*(
 TranslatedCyclers <param> <param>...
-  <param>: -D<database>           Seed database file (defaults to SeedDatabase.bin)
+  <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
            -I<input file>         Input file: list of machines to be analysed
            -V<verification file>  Output file: verification data for decided machines
            -U<undecided file>     Output file: remaining undecided machines
