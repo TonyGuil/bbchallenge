@@ -1,2 +1,1 @@
-TranslatedCyclers -I../Cyclers/Cyclers.umf -UTranslatedCyclers.umf -VTranslatedCyclers.dvf -T10000
-VerifyTranslatedCyclers -VTranslatedCyclers.dvf
+TranslatedCyclers -I../Cyclers/Cyclers.umf -UBig.umf -VBig.dvf -T20000000 -S100000 -m4

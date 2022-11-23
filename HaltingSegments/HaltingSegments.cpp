@@ -79,13 +79,13 @@ bool CommandLineParams::TraceOutput ;
 uint32_t CommandLineParams::MachineLimit ;  bool CommandLineParams::MachineLimitPresent ;
 
 //
-// HaltingSegments class
+// HaltingSegment class
 //
 
-class HaltingSegments
+class HaltingSegment
   {
 public:
-  HaltingSegments (uint32_t DepthLimit, uint32_t SpaceLimit, uint32_t NodeLimit)
+  HaltingSegment (uint32_t DepthLimit, uint32_t SpaceLimit, uint32_t NodeLimit)
   : DepthLimit (DepthLimit), SpaceLimit (SpaceLimit), NodeLimit (NodeLimit)
     {
     // Allocate the tape workspace
@@ -253,7 +253,7 @@ int main (int argc, char** argv)
   uint8_t MachineSpec[MACHINE_SPEC_SIZE] ;
   if (CommandLineParams::TestMachinePresent)
     {
-    HaltingSegments Decider (CommandLineParams::DepthLimit,
+    HaltingSegment Decider (CommandLineParams::DepthLimit,
       CommandLineParams::WidthLimit, CommandLineParams::NodeLimit) ;
     Decider.SeedDatabaseIndex = CommandLineParams::TestMachine ;
     Reader.Read (Decider.SeedDatabaseIndex, MachineSpec) ;
@@ -314,14 +314,14 @@ int main (int argc, char** argv)
 
   clock_t Timer = clock() ;
 
-  HaltingSegments** DeciderArray = new HaltingSegments*[CommandLineParams::nThreads] ;
+  HaltingSegment** DeciderArray = new HaltingSegment*[CommandLineParams::nThreads] ;
   uint32_t** MachineIndexList = new uint32_t*[CommandLineParams::nThreads] ;
   uint8_t** MachineSpecList = new uint8_t*[CommandLineParams::nThreads] ;
   uint8_t** VerificationEntryList = new uint8_t*[CommandLineParams::nThreads] ;
   uint32_t* ChunkSize = new uint32_t[CommandLineParams::nThreads] ;
   for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
     {
-    DeciderArray[i] = new HaltingSegments (CommandLineParams::DepthLimit,
+    DeciderArray[i] = new HaltingSegment (CommandLineParams::DepthLimit,
       CommandLineParams::WidthLimit, CommandLineParams::NodeLimit) ;
     MachineIndexList[i] = new uint32_t[CHUNK_SIZE] ;
     MachineSpecList[i] = new uint8_t[MACHINE_SPEC_SIZE * CHUNK_SIZE] ;
@@ -360,7 +360,7 @@ int main (int argc, char** argv)
         Reader.Read (MachineIndexList[i][j], MachineSpecList[i] + j * MACHINE_SPEC_SIZE) ;
         }
 
-      ThreadList[i] = new boost::thread (HaltingSegments::ThreadFunction,
+      ThreadList[i] = new boost::thread (HaltingSegment::ThreadFunction,
         DeciderArray[i], ChunkSize[i], MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i]) ;
       }
 
@@ -440,7 +440,7 @@ int main (int argc, char** argv)
     }
   }
 
-void HaltingSegments::ThreadFunction (int nMachines, const uint32_t* MachineIndexList,
+void HaltingSegment::ThreadFunction (int nMachines, const uint32_t* MachineIndexList,
   const uint8_t* MachineSpecList, uint8_t* VerificationEntryList)
   {
   while (nMachines--)
@@ -449,7 +449,7 @@ void HaltingSegments::ThreadFunction (int nMachines, const uint32_t* MachineInde
     if (Run (MachineSpecList))
       {
       Save32 (VerificationEntryList, SeedDatabaseIndex) ;
-      Save32 (VerificationEntryList + 4, uint32_t (DeciderTag::HALTING_SEGMENTS)) ;
+      Save32 (VerificationEntryList + 4, uint32_t (DeciderTag::HALTING_SEGMENT)) ;
       Save32 (VerificationEntryList + 8, VERIF_INFO_LENGTH) ;
       Save32 (VerificationEntryList + 12, Leftmost) ;
       Save32 (VerificationEntryList + 16, Rightmost) ;
@@ -464,7 +464,7 @@ void HaltingSegments::ThreadFunction (int nMachines, const uint32_t* MachineInde
     }
   }
 
-bool HaltingSegments::Run (const uint8_t* MachineSpec)
+bool HaltingSegment::Run (const uint8_t* MachineSpec)
   {
   for (int i = 0 ; i <= NSTATES ; i++) TransitionTable[i].clear() ;
 
@@ -524,7 +524,7 @@ bool HaltingSegments::Run (const uint8_t* MachineSpec)
   return false ;
   }
 
-bool HaltingSegments::Recurse (uint32_t Depth, const Configuration& Config)
+bool HaltingSegment::Recurse (uint32_t Depth, const Configuration& Config)
   {
   if (Depth == DepthLimit) return false ; // Search too deep, no decision possible
   if (++Depth > MaxDepth) MaxDepth = Depth ;
@@ -619,7 +619,7 @@ bool HaltingSegments::Recurse (uint32_t Depth, const Configuration& Config)
   return true ;
   }
 
-bool HaltingSegments::ExitSegmentLeft (uint32_t Depth, uint8_t State)
+bool HaltingSegment::ExitSegmentLeft (uint32_t Depth, uint8_t State)
   {
   if (Depth == DepthLimit) return false ; // Search too deep, no decision possible
   if (++Depth > MaxDepth) MaxDepth = Depth ;
@@ -661,7 +661,7 @@ bool HaltingSegments::ExitSegmentLeft (uint32_t Depth, uint8_t State)
   return true ;
   }
 
-bool HaltingSegments::ExitSegmentRight (uint32_t Depth, uint8_t State)
+bool HaltingSegment::ExitSegmentRight (uint32_t Depth, uint8_t State)
   {
   if (Depth == DepthLimit) return false ; // Search too deep, no decision possible
   if (++Depth > MaxDepth) MaxDepth = Depth ;
@@ -703,7 +703,7 @@ bool HaltingSegments::ExitSegmentRight (uint32_t Depth, uint8_t State)
   return true ;
   }
 
-bool HaltingSegments::FindShorterOrEqual (const CompoundTree* Tree, const uint8_t* TapeHead)
+bool HaltingSegment::FindShorterOrEqual (const CompoundTree* Tree, const uint8_t* TapeHead)
   {
   if (Tree == nullptr) return false ;
   for (const uint8_t* p = TapeHead - 1 ; Tree ; p--)
@@ -715,7 +715,7 @@ bool HaltingSegments::FindShorterOrEqual (const CompoundTree* Tree, const uint8_
   return false ;
   }
 
-HaltingSegments::CompoundTree* HaltingSegments::Insert (CompoundTree* Tree, const uint8_t* TapeHead)
+HaltingSegment::CompoundTree* HaltingSegment::Insert (CompoundTree* Tree, const uint8_t* TapeHead)
   {
   if (Tree == 0)
     {
@@ -738,7 +738,7 @@ HaltingSegments::CompoundTree* HaltingSegments::Insert (CompoundTree* Tree, cons
   return Tree ;
   }
 
-bool HaltingSegments::FindShorterOrEqual (const ForwardTree* Tree, const uint8_t* TapeHead)
+bool HaltingSegment::FindShorterOrEqual (const ForwardTree* Tree, const uint8_t* TapeHead)
   {
   // Tree = 0 means no entries here:
   if (Tree == 0) return false ;
@@ -755,7 +755,7 @@ bool HaltingSegments::FindShorterOrEqual (const ForwardTree* Tree, const uint8_t
     }
   }
 
-HaltingSegments::ForwardTree* HaltingSegments::Insert (ForwardTree* Tree, const uint8_t* TapeHead)
+HaltingSegment::ForwardTree* HaltingSegment::Insert (ForwardTree* Tree, const uint8_t* TapeHead)
   {
   if (*TapeHead > 1) return (ForwardTree*)LEAF_NODE ; // Empty string
 
@@ -787,7 +787,7 @@ HaltingSegments::ForwardTree* HaltingSegments::Insert (ForwardTree* Tree, const 
     }
   }
 
-bool HaltingSegments::FindShorterOrEqual (const BackwardTree* Tree, const uint8_t* TapeHead)
+bool HaltingSegment::FindShorterOrEqual (const BackwardTree* Tree, const uint8_t* TapeHead)
   {
   // Tree = 0 means no entries here:
   if (Tree == 0) return false ;
@@ -804,7 +804,7 @@ bool HaltingSegments::FindShorterOrEqual (const BackwardTree* Tree, const uint8_
     }
   }
 
-HaltingSegments::BackwardTree* HaltingSegments::Insert (BackwardTree* Tree, const uint8_t* TapeHead)
+HaltingSegment::BackwardTree* HaltingSegment::Insert (BackwardTree* Tree, const uint8_t* TapeHead)
   {
 #if PRUNT
   Tree = RemoveLongerOrEqual (Tree, TapeHead) ;

@@ -243,7 +243,7 @@ void Cycler::Run (uint32_t MachineIndex, const uint8_t* MachineSpec, uint8_t* Ve
         if (!memcmp (Tape + Leftmost, TapeHistory[prev] + Leftmost, Rightmost - Leftmost + 1))
           {
           Save32 (VerificationEntry, MachineIndex) ;
-          Save32 (VerificationEntry + 4, uint32_t (DeciderTag::CYCLERS)) ;
+          Save32 (VerificationEntry + 4, uint32_t (DeciderTag::CYCLER)) ;
           Save32 (VerificationEntry + 8, VERIF_INFO_LENGTH) ;
   
           // Leftmost

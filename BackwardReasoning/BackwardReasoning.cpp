@@ -132,13 +132,21 @@ int main (int argc, char** argv)
   if (fseek (fpin, 0, SEEK_SET))
     printf ("fseek failed\n"), exit (1) ;
 
-  FILE* fpUndecided = fopen (CommandLineParams::UndecidedFile.c_str(), "wb") ;
-  if (fpUndecided == NULL)
-    printf ("Can't open output file \"%s\"\n", CommandLineParams::UndecidedFile.c_str()), exit (1) ;
+  FILE* fpUndecided = 0 ;
+  if (!CommandLineParams::UndecidedFile.empty())
+    {
+    fpUndecided = fopen (CommandLineParams::UndecidedFile.c_str(), "wb") ;
+    if (fpUndecided == NULL)
+      printf ("Can't open output file \"%s\"\n", CommandLineParams::UndecidedFile.c_str()), exit (1) ;
+    }
 
-  FILE* fpVerif = fopen (CommandLineParams::VerificationFile.c_str(), "wb") ;
-  if (fpVerif == NULL)
-    printf ("Can't open output file \"%s\"\n", CommandLineParams::VerificationFile.c_str()), exit (1) ;
+  FILE* fpVerif = 0 ;
+  if (!CommandLineParams::VerificationFile.empty())
+    {
+    fpVerif = fopen (CommandLineParams::VerificationFile.c_str(), "wb") ;
+    if (fpVerif == NULL)
+      printf ("Can't open output file \"%s\"\n", CommandLineParams::VerificationFile.c_str()), exit (1) ;
+    }
 
   uint32_t nTimeLimited = Read32 (fpin) ;
   uint32_t nSpaceLimited = Read32 (fpin) ;
@@ -175,7 +183,7 @@ int main (int argc, char** argv)
       Save32 (VerificationEntry + 16, Decider.Rightmost) ;
       Save32 (VerificationEntry + 20, Decider.MaxDepth) ;
       Save32 (VerificationEntry + 24, Decider.nNodes) ;
-      if (fwrite (VerificationEntry, VERIF_ENTRY_LENGTH, 1, fpVerif) != 1)
+      if (fpVerif && fwrite (VerificationEntry, VERIF_ENTRY_LENGTH, 1, fpVerif) != 1)
         printf ("Write error\n"), exit (1) ;
       nDecided++ ;
       if (Entry < nTimeLimited) nTimeLimitedDecided++ ;
@@ -194,23 +202,29 @@ int main (int argc, char** argv)
   // Check that we've reached the end of the input file
   if (fread (MachineSpec, 1, 1, fpin) != 0) printf ("\nInput file too long!\n"), exit (1) ;
 
-  // Write the verification file header
-  if (fseek (fpVerif, 0 , SEEK_SET))
-    printf ("\nfseek failed\n"), exit (1) ;
-  Write32 (fpVerif, nDecided) ;
-  fclose (fpVerif) ;
+  if (fpVerif)
+    {
+    // Write the verification file header
+    if (fseek (fpVerif, 0 , SEEK_SET))
+      printf ("\nfseek failed\n"), exit (1) ;
+    Write32 (fpVerif, nDecided) ;
+    fclose (fpVerif) ;
+    }
 
   Timer = clock() - Timer ;
 
   printf ("\n") ;
 
-  // Write the undecided file header
-  if (fseek (fpUndecided, 0 , SEEK_SET))
-    printf ("\nfseek failed\n"), exit (1) ;
-  Write32 (fpUndecided, nTimeLimited - nTimeLimitedDecided) ;
-  Write32 (fpUndecided, nSpaceLimited - nSpaceLimitedDecided) ;
+  if (fpUndecided)
+    {
+    // Write the undecided file header
+    if (fseek (fpUndecided, 0 , SEEK_SET))
+      printf ("\nfseek failed\n"), exit (1) ;
+    Write32 (fpUndecided, nTimeLimited - nTimeLimitedDecided) ;
+    Write32 (fpUndecided, nSpaceLimited - nSpaceLimitedDecided) ;
 
-  fclose (fpUndecided) ;
+    fclose (fpUndecided) ;
+    }
   fclose (fpin) ;
 
   printf ("\nDecided %d out of %d\n", nDecided, nTimeLimited + nSpaceLimited) ;
@@ -249,6 +263,7 @@ bool BackwardReasoning::Run (const uint8_t* MachineSpec)
 bool BackwardReasoning::Recurse (uint32_t Depth, const Configuration& Config)
   {
   if (Depth == DepthLimit) return false ; // Search too deep, no decision possible
+
   nNodes++ ;
   if (Depth > MaxDepth) MaxDepth = Depth ;
 
@@ -343,9 +358,6 @@ void CommandLineParams::Parse (int argc, char** argv)
     }
 
   if (InputFile.empty()) printf ("Input file not specified\n"), PrintHelpAndExit (1) ;
-  if (VerificationFile.empty()) printf ("Verification file not specified\n"), PrintHelpAndExit (1) ;
-  if (UndecidedFile.empty()) printf ("Undecided file not specified\n"), PrintHelpAndExit (1) ;
-
   if (!DepthLimitPresent) printf ("Depth limit not specified\n"), PrintHelpAndExit (1) ;
   }
 

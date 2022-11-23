@@ -9,23 +9,37 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define NSTATES        5
 #define MAX_SPACE      12289
+#define MAX_TIME       47176870 
 #define MACHINE_STATES 5
 #define TAPE_SENTINEL  2
 
+// Number of machines of each type in the Seed Database:
+#define NTIME_LIMITED  14322029
+#define NSPACE_LIMITED 74342035
+
 #define VERIF_HEADER_LENGTH 12 // Verification data header length
-#define VERIF_ENTRY_LENGTH (VERIF_HEADER_LENGTH + VERIF_INFO_LENGTH)
-  // VERIF_INFO_LENGTH must be defined in the cpp file
+
+#define TM_ERROR() \
+  printf ("\n#%d: Error at line %d in %s\n", \
+  SeedDatabaseIndex, __LINE__, __FUNCTION__), exit (1)
+
+// For constant-length verification data, define VERIF_INFO_LENGTH
+// in the cpp file, and then you can use VERIF_ENTRY_LENGTH:
+#define VERIF_ENTRY_LENGTH (VERIF_HEADER_LENGTH + (VERIF_INFO_LENGTH))
 
 enum class DeciderTag : uint32_t
   {
-  NONE                     = 0,
-  CYCLERS                  = 1,
-  TRANSLATED_CYCLERS_RIGHT = 2,
-  TRANSLATED_CYCLERS_LEFT  = 3,
-  BACKWARD_REASONING       = 4,
+  NONE                    = 0,
+  CYCLER                  = 1,
+  TRANSLATED_CYCLER_RIGHT = 2,
+  TRANSLATED_CYCLER_LEFT  = 3,
+  BACKWARD_REASONING      = 4,
+  HALTING_SEGMENT         = 5,
+  BOUNCER                 = 6,
   } ;
 
 enum class StepResult : uint8_t
@@ -55,18 +69,43 @@ inline uint32_t Load32 (const void* p)
 #endif
   }
 
-inline void Save32 (void* p, uint32_t n)
+inline uint16_t Load16 (const void* p)
+  {
+#if BIG_ENDIAN
+  return *(uint16_t*)p ;
+#else
+  return __builtin_bswap16 (*(uint16_t*)p) ;
+#endif
+  }
+
+inline uint32_t Save32 (void* p, uint32_t n)
   {
 #if BIG_ENDIAN
   *(uint32_t*)p = n ;
 #else
   *(uint32_t*)p = __builtin_bswap32 (n) ;
 #endif
+  return 4 ;
+  }
+
+inline uint32_t Save16 (void* p, uint16_t n)
+  {
+#if BIG_ENDIAN
+  *(uint16_t*)p = n ;
+#else
+  *(uint16_t*)p = __builtin_bswap16 (n) ;
+#endif
+  return 2 ;
   }
 
 // inline uint32_t Read32 (FILE* fp)
+// inline uint32_t Read16u (FILE* fp)
+// inline int32_t Read16s (FILE* fp)
+// inline uint32_t Read8u (FILE* fp)
+// inline int32_t Read8s (FILE* fp)
 //
-// Read a 32-bit big-endian integer from a file, reversing the bytes if necessary
+// Read signed or unsigned big-endian integers of various sizes from a file,
+// reversing the bytes if necessary
 
 inline uint32_t Read32 (FILE* fp)
   {
@@ -79,6 +118,42 @@ inline uint32_t Read32 (FILE* fp)
 #endif
   }
 
+inline uint32_t Read16u (FILE* fp)
+  {
+  uint16_t t ;
+  if (fread (&t, 2, 1, fp) != 1) printf ("\nRead error in Read16u\n"), exit (1) ;
+#if BIG_ENDIAN
+  return t ;
+#else
+  return __builtin_bswap16 (t) ;
+#endif
+  }
+
+inline int32_t Read16s (FILE* fp)
+  {
+  int16_t t ;
+  if (fread (&t, 2, 1, fp) != 1) printf ("\nRead error in Read16s\n"), exit (1) ;
+#if BIG_ENDIAN
+  return t ;
+#else
+  return (int16_t)__builtin_bswap16 (t) ;
+#endif
+  }
+
+inline uint32_t Read8u (FILE* fp)
+  {
+  uint8_t t ;
+  if (fread (&t, 1, 1, fp) != 1) printf ("\nRead error in Read8u\n"), exit (1) ;
+  return t ;
+  }
+
+inline int32_t Read8s (FILE* fp)
+  {
+  int8_t t ;
+  if (fread (&t, 1, 1, fp) != 1) printf ("\nRead error in Read8s\n"), exit (1) ;
+  return t ;
+  }
+
 // inline void Write32 (FILE* fp, uint32_t n)
 //
 // Write a big-endian 32-bit integer to a file, reversing the bytes if necessary
@@ -88,7 +163,7 @@ inline void Write32 (FILE* fp, uint32_t n)
 #if !BIG_ENDIAN
   n = __builtin_bswap32 (n) ;
 #endif
-  if (fwrite (&n, 4, 1, fp) != 1)
+  if (fp && fwrite (&n, 4, 1, fp) != 1)
     printf ("Write error\n"), exit (1) ;
   }
 
@@ -121,6 +196,7 @@ public:
   int Leftmost ;
   int Rightmost ;
   uint32_t StepCount ;
+  int8_t RecordBroken ; // +/-1 if the latest step broke a right or left record
 
   void Initialise (int Index, const uint8_t* MachineSpec)
     {
@@ -137,10 +213,31 @@ public:
     TapeHead = Leftmost = Rightmost = 0 ;
     State = 1 ;
     StepCount = 0 ;
+    RecordBroken = 0 ;
+    }
+
+  TuringMachine& operator= (const TuringMachine& Src)
+    {
+    if (TimeLimit != Src.TimeLimit || SpaceLimit != Src.SpaceLimit)
+      printf ("Error 1 in TuringMachine::operator=\n"), exit (1) ;
+
+    SeedDatabaseIndex = Src.SeedDatabaseIndex ;
+    TapeHead = Src.TapeHead ;
+    State = Src.State ;
+    Leftmost = Src.Leftmost ;
+    Rightmost = Src.Rightmost ;
+    StepCount = Src.StepCount ;
+    RecordBroken = Src.RecordBroken ;
+
+    memcpy (TM, Src.TM, sizeof (TM)) ;
+    memcpy (TapeWorkspace, Src.TapeWorkspace, 2 * SpaceLimit + 1) ;
+
+    return *this ;
     }
 
   StepResult Step()
     {
+    RecordBroken = 0 ;
     uint8_t Cell = Tape[TapeHead] ;
     if (Cell == TAPE_SENTINEL) return StepResult::OUT_OF_BOUNDS ;
     const StateDesc& S = TM[State][Cell] ;
@@ -148,19 +245,27 @@ public:
     if (S.Move) // Left
       {
       TapeHead-- ;
-      if (TapeHead < Leftmost) Leftmost = TapeHead ;
+      if (TapeHead < Leftmost)
+        {
+        Leftmost = TapeHead ;
+        RecordBroken = -1 ;
+        }
       }
     else
       {
       TapeHead++ ;
-      if (TapeHead > Rightmost) Rightmost = TapeHead ;
+      if (TapeHead > Rightmost)
+        {
+        Rightmost = TapeHead ;
+        RecordBroken = 1 ;
+        }
       }
     State = S.Next ;
     StepCount++ ;
     return State ? StepResult::OK : StepResult::HALT ;
     }
 
-private:
+protected:
 
   StateDesc TM[NSTATES + 1][2] ;
   uint8_t* TapeWorkspace ;
@@ -184,7 +289,11 @@ public:
     fp = fopen (Filename, "rb") ;
     if (fp == 0) printf ("Can't open file \"%s\"\n", Filename), exit (1) ;
     nTimeLimited = Read32 (fp) ;
+    if (nTimeLimited != NTIME_LIMITED)
+      printf ("nTimeLimited discrepancy!\n"), exit (1) ;
     nSpaceLimited = Read32 (fp) ;
+    if (nSpaceLimited != NSPACE_LIMITED)
+      printf ("nSpaceLimited discrepancy!\n"), exit (1) ;
     nMachines = Read32 (fp) ;
     if (nMachines != nTimeLimited + nSpaceLimited)
       printf ("Invalid seed database file\n"), exit (1) ;

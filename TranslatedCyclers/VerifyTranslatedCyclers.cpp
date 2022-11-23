@@ -5,6 +5,7 @@
 //   VerifyTranslatedCyclers <param> <param>...
 //     <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
 //              -V<verification file>  Output file: verification data for decided machines
+//              -S<space limit>        Max absolute value of tape head
 //
 // Format of verification info:
 //
@@ -33,17 +34,19 @@ class CommandLineParams
 public:
   static std::string SeedDatabaseFile ;
   static std::string VerificationFile ;
+  static uint32_t SpaceLimit ;
   static void Parse (int argc, char** argv) ;
   static void PrintHelpAndExit [[noreturn]] (int status) ;
   } ;
 
 std::string CommandLineParams::SeedDatabaseFile ;
 std::string CommandLineParams::VerificationFile ;
+uint32_t CommandLineParams::SpaceLimit = 50000 ; // Needed to verify #60054343
 
 class TranslatedCyclerVerifier : public TuringMachine
   {
 public:
-  TranslatedCyclerVerifier() : TuringMachine (0, MAX_SPACE)
+  TranslatedCyclerVerifier (uint32_t SpaceLimit) : TuringMachine (0, SpaceLimit)
     {
     MatchContents = new uint8_t[2 * SpaceLimit + 1] ;
     MaxSteps = MaxMatchLength = MaxPeriod = MaxShift = 0 ;
@@ -73,7 +76,7 @@ int main (int argc, char** argv)
   uint32_t nEntries = Read32 (fpVerify) ;
   int LastPercent = -1 ;
   uint8_t MachineSpec[MACHINE_SPEC_SIZE] ;
-  TranslatedCyclerVerifier Verifier ;
+  TranslatedCyclerVerifier Verifier (CommandLineParams::SpaceLimit) ;
 
   clock_t Timer = clock() ;
 
@@ -90,8 +93,8 @@ int main (int argc, char** argv)
     bool TranslateLeft ;
     switch (DeciderTag (Read32 (fpVerify)))
       {
-      case DeciderTag::TRANSLATED_CYCLERS_LEFT: TranslateLeft = true ; break ;
-      case DeciderTag::TRANSLATED_CYCLERS_RIGHT: TranslateLeft = false ; break ;
+      case DeciderTag::TRANSLATED_CYCLER_LEFT: TranslateLeft = true ; break ;
+      case DeciderTag::TRANSLATED_CYCLER_RIGHT: TranslateLeft = false ; break ;
       default: printf ("\nUnrecognised DeciderTag\n") ; exit (1) ;
       }
 
@@ -120,7 +123,7 @@ void TranslatedCyclerVerifier::Verify (uint32_t SeedDatabaseIndex,
 
   // Read the verification data from the input file
   if (Read32 (fp) != VERIF_INFO_LENGTH)
-    printf ("Invalid TranslatedCyclers verification data\n"), exit (1) ;
+    printf ("%d: Invalid TranslatedCyclers verification data\n", SeedDatabaseIndex), exit (1) ;
   int32_t ExpectedLeftmost = Read32 (fp) ;
   int32_t ExpectedRightmost = Read32 (fp) ;
   uint32_t FinalState = Read32 (fp) ;
@@ -132,24 +135,25 @@ void TranslatedCyclerVerifier::Verify (uint32_t SeedDatabaseIndex,
 
   // Perform some sanity checks on the data
   if (ExpectedLeftmost > 0)
-    printf ("Error: Leftmost = %d is positive\n", ExpectedLeftmost), exit (1) ;
+    printf ("%d: Error: Leftmost = %d is positive\n", SeedDatabaseIndex, ExpectedLeftmost), exit (1) ;
   if (ExpectedRightmost < 0)
-    printf ("Error: Rightmost = %d is negative\n", ExpectedRightmost), exit (1) ;
+    printf ("%d: Error: Rightmost = %d is negative\n", SeedDatabaseIndex, ExpectedRightmost), exit (1) ;
   if (FinalState == 0 || FinalState > 5)
-    printf ("Invalid Final State %d\n", FinalState), exit (1) ; ;
+    printf ("%d: Invalid Final State %d\n", SeedDatabaseIndex, FinalState), exit (1) ;
   if (InitialTapeHead < ExpectedLeftmost || InitialTapeHead > ExpectedRightmost)
-    printf ("Invalid InitialTapeHead out of bounds\n"), exit (1) ;
+    printf ("%d: Invalid InitialTapeHead out of bounds\n", SeedDatabaseIndex), exit (1) ;
   if (FinalStepCount < InitialStepCount)
-    printf ("FinalStepCount %d >= InitialStepCount %d\n", FinalStepCount, InitialStepCount), exit (1) ;
+    printf ("%d: FinalStepCount %d >= InitialStepCount %d\n",
+      SeedDatabaseIndex, FinalStepCount, InitialStepCount), exit (1) ;
   if (TranslateLeft)
     {
     if (FinalTapeHead != ExpectedLeftmost)
-      printf ("FinalTapeHead != ExpectedLeftmost\n"), exit (1) ;
+      printf ("%d: FinalTapeHead != ExpectedLeftmost\n", SeedDatabaseIndex), exit (1) ;
     }
   else
     {
     if (FinalTapeHead != ExpectedRightmost)
-      printf ("FinalTapeHead != ExpectedRightmost\n"), exit (1) ;
+      printf ("%d: FinalTapeHead != ExpectedRightmost\n", SeedDatabaseIndex), exit (1) ;
     }
 
   // Update the stats
@@ -193,7 +197,7 @@ void TranslatedCyclerVerifier::Verify (uint32_t SeedDatabaseIndex,
       {
       // Point (i): Check that State and TapeHead are as expected
       if (State != FinalState || TapeHead != InitialTapeHead)
-        printf ("Initial state mismatch\n"), exit (1) ;
+        printf ("%d: Initial state mismatch\n", SeedDatabaseIndex), exit (1) ;
 
       // Point (iii) and (iv): move the right (resp. left) tape sentinel
       // to stop the tape head straying to the right (resp. left) of the
@@ -222,30 +226,30 @@ void TranslatedCyclerVerifier::Verify (uint32_t SeedDatabaseIndex,
         break ;
 
       case StepResult::OUT_OF_BOUNDS:
-        printf ("Tape head out of bounds\n") ;
+        printf ("%d: Tape head %d is out of bounds\n", SeedDatabaseIndex, TapeHead) ;
         exit (1) ;
 
       case StepResult::HALT:
-        printf ("Unexpected HALT state reached\n") ;
+        printf ("%d: Unexpected HALT state reached\n", SeedDatabaseIndex) ;
         exit (1) ;
       }
     }
 
   // Check that the final state and tape head are as expected
   if (State != FinalState || TapeHead != FinalTapeHead)
-    printf ("Final state mismatch\n"), exit (1) ;
+    printf ("%d: Final state mismatch\n", SeedDatabaseIndex), exit (1) ;
 
   // Check that the leftmost (resp. rightmost) MatchLength bytes match those
   // of the initial state
   if (TranslateLeft)
     {
     if (memcmp (Tape + FinalTapeHead, MatchContents, MatchLength))
-      printf ("Final tape mismatch\n"), exit (1) ;
+      printf ("%d: Final tape mismatch\n", SeedDatabaseIndex), exit (1) ;
     }
   else
     {
     if (memcmp (Tape + FinalTapeHead - MatchLength + 1, MatchContents, MatchLength))
-      printf ("Final tape mismatch\n"), exit (1) ;
+      printf ("%d: Final tape mismatch\n", SeedDatabaseIndex), exit (1) ;
     }
   }
 
@@ -266,6 +270,10 @@ void CommandLineParams::Parse (int argc, char** argv)
       case 'V':
         if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
         VerificationFile = std::string (&argv[0][2]) ;
+        break ;
+
+      case 'S':
+        SpaceLimit = atoi (&argv[0][2]) ;
         break ;
 
       default:

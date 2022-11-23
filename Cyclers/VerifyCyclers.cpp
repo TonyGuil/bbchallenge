@@ -78,7 +78,7 @@ int main (int argc, char** argv)
       }
 
     uint32_t SeedDatabaseIndex = Read32 (fpVerify) ;
-    if (DeciderTag (Read32 (fpVerify)) != DeciderTag::CYCLERS)
+    if (DeciderTag (Read32 (fpVerify)) != DeciderTag::CYCLER)
       printf ("\nUnrecognised DeciderTag\n") ;
 
     Reader.Read (SeedDatabaseIndex, MachineSpec) ;
