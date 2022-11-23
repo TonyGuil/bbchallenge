@@ -31,6 +31,7 @@ When I say "very probably", I mean that if it passes all the tests during the ge
 
 #### VerificationInfo
 
+```
 The VerificationInfo for a Bouncer is quite complex. At the highest level, it consists of:
  - a starting point: run the machine for a given number of steps to reach this;
  - a sequence of RunDescriptors; execute each of these RunDescriptors to advance through the Cycle.
@@ -106,35 +107,38 @@ TapeDescriptor:
 ByteArray:
   ushort Len
   ubyte Data[Len]
+```
 
 #### The Verification Process: the Easy Parts
 
 ##### 1. Initialisation
-Run the machine for InitialSteps steps. Check that InitialLeftmost and InitialRightmost are correct (this is important to distinguish Bouncers from Bells). Check that InitialTape accurately describes the machine (state, tape head, and tape).
+Run the machine for `InitialSteps` steps. Check that `InitialLeftmost` and `InitialRightmost` are correct (this is important to distinguish Bouncers from Bells). Check that `InitialTape` accurately describes the machine (state, tape head, and tape).
 
 ##### 2. Per-Transition Verification
-For each RepeaterTransition and WallTransition, verify that executing nSteps from the Initial segment takes you to the Final Segment, without leaving the segment boundaries.
+For each `RepeaterTransition` and `WallTransition`, verify that executing `nSteps` from the `Initial` segment takes you to the `Final` segment, without leaving the segment boundaries.
 
 ##### 3. Inter-Transition Verification
-We say that Transition Tr2 *follows on from* Transition Tr1 if:
- - Tr2.Initial.State = Tr1.Final.State
- - After aligning the tapes so that Tr1.Final.TapeHead and Tr2.Initial.TapeHead are equal, the tapes agree with each other on the overlapping segment. So for instance if Tr1.Final is 001[1]01 and Tr2.Initial is 1[1]0110, we align them:
+We say that `Transition Tr2` *follows on from* `Transition Tr1` if:
+ - `Tr2.Initial.State = Tr1.Final.State`
+ - After aligning the tapes so that `Tr1.Final.TapeHead` and `Tr2.Initial.TapeHead` are equal, the tapes agree with each other on the overlapping segment. So for instance if `Tr1.Final` is `001[1]01` and `Tr2.Initial` is `1[1]0110`, we align them:
 
->   001[1]01
->     1[1]0110
+```
+   001[1]01
+     1[1]0110
+```
 
-and check that the overlap is the same (1[1]01) in both tapes.
+and check that the overlap is the same (`1[1]01`) in both tapes.
 
-Now check that for each RunDescriptor, RepeaterTransition follows on from itself; and WallTransition follows on from RepeaterTransition. And check that for each RunDescriptor except the first, RepeaterTransition follows on from WallTransition from the previous RunDescriptor. And to complete the Cycle, check that the RepeaterTransition of the first RunDescriptor follows on from the WallTransition of the last RunDescriptor.
+Now check that for each `RunDescriptor`, `RepeaterTransition` follows on from itself; and `WallTransition` follows on from `RepeaterTransition`. And check that for each `RunDescriptor` except the first, `RepeaterTransition` follows on from `WallTransition` from the previous `RunDescriptor`. And to complete the Cycle, check that the `RepeaterTransition` of the first `RunDescriptor` follows on from the `WallTransition` of the last `RunDescriptor`.
 
 ##### 4. TapeDescriptor Verification
-For each RunDescriptor, execute its RepeaterTransition RepeaterCount[Partition] times, and check that TD0 correctly describes the state of the machine; execute its WallTransition once, and check that TD1 correctly describes the state of the machine.
+For each `RunDescriptor`, execute its `RepeaterTransition` `RepeaterCount[Partition]` times, and check that `TD0` correctly describes the state of the machine; execute its `WallTransition` once, and check that `TD1` correctly describes the state of the machine.
 
 ##### 5. Complete the Cycle
-TapeDescriptor TD1 in the last RunDescriptor describes the state of the machine after it has executed all the Transitions in the Cycle. Now adjust InitialTape by appending a single Repeater to each Wall (i.e. set InitialTape.Wall[i] += InitialTape.Repeater[i] for each partition i). After doing this, InitialTape should describe exactly the same tape as TD1. (You will have to adjust Leftmost, Rightmost, and TapeHeadOffset fields for this, so perhaps this step should come under "mostly Easy".)
+`TapeDescriptor TD1` in the last `RunDescriptor` describes the state of the machine after it has executed all the `Transitions` in the Cycle. Now adjust `InitialTape` by appending a single `Repeater` to each `Wall` (i.e. set `InitialTape.Wall[i] += InitialTape.Repeater[i]` for each partition `i`). After doing this, `InitialTape` should describe exactly the same tape as `TD1`. (You will have to adjust `Leftmost`, `Rightmost`, and `TapeHeadOffset` fields for this, so perhaps this step should come under "mostly Easy".)
 
 #### The Verification Process: the Hard Parts
 
-To complete the Verification Process, we have to check that each Transition really does transform its preceding TapeDescriptor to its following TapeDescriptor.
+To complete the Verification Process, we have to check that each `Transition` really does transform its preceding `TapeDescriptor` to its following `TapeDescriptor`.
 
 TO BE CONTINUED...
