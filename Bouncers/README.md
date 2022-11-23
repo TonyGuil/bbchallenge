@@ -6,14 +6,14 @@ The output file Bouncers.dvf is too large to commit to GitHub; run Run.bat (on W
 
 A Bouncer of the simplest kind is a machine that bounces back and forth between two walls, which move further and further apart. These simple Bouncers can be categorised as:
 
-  - Unilateral Bouncer (e.g. [#4175994](https://bbchallenge.org/4175994)): one of the two wall remains stationary
-  - Bilateral Bouncer (e.g. [#8929416](https://bbchallenge.org/8929416)): both walls move, in different directions
-  - Translated Bouncer (e.g. [#20076854](https://bbchallenge.org/20076854)): both walls move in the same direction, while getting further apart
+- Unilateral Bouncer (e.g. [#4175994](https://bbchallenge.org/4175994)): one of the two wall remains stationary
+- Bilateral Bouncer (e.g. [#8929416](https://bbchallenge.org/8929416)): both walls move, in different directions
+- Translated Bouncer (e.g. [#20076854](https://bbchallenge.org/20076854)): both walls move in the same direction, while getting further apart
 
 But Bouncers can be more complex. We define some terms:
 
- - A *Run* is a sequence of operations (a *Repeater*) that is repeated a number of times,  followed by a sequence of operations (the *Wall*) that is executed once.
- - A *Cycle* is a sequence of Runs that repeats indefinitely, with the number of Repeaters in each run increasing by one in each Cycle.
+- A *Run* is a sequence of operations (a *Repeater*) that is repeated a number of times,  followed by a sequence of operations (the *Wall*) that is executed once.
+- A *Cycle* is a sequence of Runs that repeats indefinitely, with the number of Repeaters in each run increasing by one in each Cycle.
 
 The Cycle for most Bouncers (about 84%) consists of two Runs. A further 14% consist of four runs (e.g. [#340](https://bbchallenge.org/340): notice how the state of the leftmost cell alternates between D and E). But some Bouncers consist of many Runs; the current record is [#3957107](https://bbchallenge.org/3957107), which executes 156 runs before repeating.
 
@@ -31,23 +31,23 @@ When I say "very probably", I mean that if it passes all the tests during the ge
 
 #### VerificationInfo
 
-```
 The VerificationInfo for a Bouncer is quite complex. At the highest level, it consists of:
- - a starting point: run the machine for a given number of steps to reach this;
- - a sequence of RunDescriptors; execute each of these RunDescriptors to advance through the Cycle.
+- a starting point: run the machine for a given number of steps to reach this;
+- a sequence of RunDescriptors; execute each of these RunDescriptors to advance through the Cycle.
 
 To describe the format of the Decider Verification File (dvf) in detail, we use the following basic data types:
- - int: 32-bit signed integer
- - uint: 32-bit unsigned integer
- - short: 16-bit signed integer
- - ushort: 16-bit unsigned integer
- - byte: 8-bit signed integer
- - ubyte: 8-bit unsigned integer
+- `int`: 32-bit signed integer
+- `uint`: 32-bit unsigned integer
+- `short`: 16-bit signed integer
+- `ushort`: 16-bit unsigned integer
+- `byte`: 8-bit signed integer
+- `ubyte`: 8-bit unsigned integer
 
 All the types are stored in big-endian format.
 
 The Decider Verification File has the following structure:
 
+```
 dvf:
   uint nEntries
   VerificationEntry[nEntries]
