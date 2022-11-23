@@ -1,4 +1,4 @@
-// The Bouncer class contains finctions and data that are used by both
+// The Bouncer class contains functions and data that are used by both
 // the Decider and the Verifier
 
 #pragma once
