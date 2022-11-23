@@ -102,13 +102,16 @@ bool Bouncer::MatchSegments (const Segment& Seg1, const Segment& Seg2)
   return true ;
   }
 
-// void Bouncer::CheckWallTransition (const TapeDescriptor& TD0,
-//   const TapeDescriptor& TD1, const Transition& Tr)
+// void Bouncer::CheckWallTransition (TapeDescriptor TD0,
+//   TapeDescriptor TD1, const Transition& Tr)
 //
 // Check that Tr transforms tape TD0 into tape TD1
+//
+// Note that TD0 and TD1 are passed by value, not by reference; so we
+// are free to modify them here
 
-void Bouncer::CheckWallTransition (const TapeDescriptor& TD0,
-  const TapeDescriptor& TD1, const Transition& Tr)
+void Bouncer::CheckWallTransition (TapeDescriptor TD0,
+  TapeDescriptor TD1, const Transition& Tr)
   {
   // Preliminary checks
   if (TD0.State != Tr.Initial.State) TM_ERROR() ;
@@ -137,8 +140,7 @@ void Bouncer::CheckWallTransition (const TapeDescriptor& TD0,
 
   // Check that TD0, overwritten with Tr.Final.Tape, generates the
   // same tape contents as TD1
-  TapeDescriptor NewTD0 (TD0), NewTD1 (TD1) ;
-  NewTD0.State = Tr.Final.State ;
+  TD0.State = Tr.Final.State ;
 
   // Expand the wall to the left in both TapeDescriptors so that
   // Tr.Initial.Tape doesn't spill over to the left
@@ -147,23 +149,23 @@ void Bouncer::CheckWallTransition (const TapeDescriptor& TD0,
   int Shift = Tr.Initial.TapeHead - TD0.TapeHeadOffset ;
   WallLeftmost += Shift ;
   WallRightmost += Shift ;
-  ExpandWallsLeftward (NewTD0, NewTD1, Wall, WallLeftmost) ;
+  ExpandWallsLeftward (TD0, TD1, Wall, WallLeftmost) ;
 
   // Expand the wall to the right in both TapeDescriptors so that the
   // Tr.Final.Tape doesn't spill over to the right
-  ExpandWallsRightward (NewTD0, NewTD1, Wall, Tr.Final.Tape.size() - WallRightmost) ;
+  ExpandWallsRightward (TD0, TD1, Wall, Tr.Final.Tape.size() - WallRightmost) ;
 
-  // Insert the Transition's final tape into NewTD0
-  if (NewTD0.TapeHeadOffset < Tr.Initial.TapeHead) TM_ERROR() ;
-  if (NewTD0.TapeHeadOffset - Tr.Initial.TapeHead + Tr.Final.Tape.size() > NewTD0.Wall[Wall].size())
+  // Insert the Transition's final tape into TD0
+  if (TD0.TapeHeadOffset < Tr.Initial.TapeHead) TM_ERROR() ;
+  if (TD0.TapeHeadOffset - Tr.Initial.TapeHead + Tr.Final.Tape.size() > TD0.Wall[Wall].size())
     TM_ERROR() ;
-  memcpy (&NewTD0.Wall[Wall][NewTD0.TapeHeadOffset - Tr.Initial.TapeHead],
+  memcpy (&TD0.Wall[Wall][TD0.TapeHeadOffset - Tr.Initial.TapeHead],
     &Tr.Final.Tape[0], Tr.Final.Tape.size()) ;
 
-  NewTD0.TapeHeadOffset += Tr.Final.TapeHead - Tr.Initial.TapeHead ;
+  TD0.TapeHeadOffset += Tr.Final.TapeHead - Tr.Initial.TapeHead ;
 
-  // Now NewTD0 and NewTD1 should define the same tape contents
-  CheckTapesEquivalent (NewTD0, NewTD1) ;
+  // Now TD0 and TD1 should define the same tape contents
+  CheckTapesEquivalent (TD0, TD1) ;
   }
 
 // void Bouncer::CheckRepeaterTransition (const TapeDescriptor& TD0,
@@ -235,107 +237,40 @@ void Bouncer::CheckLeftwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, con
 
   // How much does Tr.Initial.Tape overhang the Wall into the array of Repeaters?
   int Overhang = Tr.Initial.TapeHead - TD0.TapeHeadOffset ;
+  if (Overhang < 0) TM_ERROR() ;
 
-  if (Overhang >= 0)
-    {
-    // If there is a gap between the wall and Tr.Initial.Tape (which can only
-    // happen if TD0.Wall[Wall].TapeHeadOffset <= -2), close it by prepending
-    // Repeaters to the current wall, and removing them from the destination wall
-    int Gap = Tr.Initial.TapeHead - Tr.Initial.Tape.size() - TD0.TapeHeadOffset ;
-    if (Gap > 0)
-      {
-      // Check that the destination wall ends with copies of the Repeater
-      int Rotate = Gap % Stride ; Rotate = Stride - Rotate ; Rotate %= Stride ;
-      if ((int)TD0.Wall[Wall - 1].size() < Gap) TM_ERROR() ;
-      for (int i = 0 ; i < Gap ; i++)
-        if (TD0.Wall[Wall - 1].at(i + TD0.Wall[Wall - 1].size() - Gap) !=
-          TD0.Repeater[Wall - 1].at((i + Rotate) % Stride))
-            TM_ERROR() ;
+  // Check that there's no gap between the wall and Tr.Initial.Tape
+  if (Tr.Initial.TapeHead > int(Tr.Initial.Tape.size() + TD0.TapeHeadOffset))
+    TM_ERROR() ;
 
-      // Prepend Repeaters to the current wall
-      TD0.Wall[Wall].insert (TD0.Wall[Wall].begin(), Gap, 0) ;
-      for (int i = 0 ; i < Gap ; i++)
-        TD0.Wall[Wall].at(i) = TD0.Repeater[Wall - 1].at((i + Rotate) % Stride) ;
+  // Check that Wall matches Tr.Initial.Tape where they overlap
+  for (uint32_t i = 0 ; i < Tr.Initial.Tape.size() - Overhang ; i++)
+    if (TD0.Wall[Wall].at(i) != Tr.Initial.Tape.at(i + Overhang)) TM_ERROR() ;
 
-      // Remove them from the destination wall
-      TD0.Wall[Wall - 1].erase (TD0.Wall[Wall - 1].end() - Gap, TD0.Wall[Wall - 1].end()) ;
+  // Check that the rest of Tr.Initial.Tape consists of appropriately aligned
+  // copies of the Repeater
+  int Rotate = Overhang % Stride ; Rotate = Stride - Rotate ; Rotate %= Stride ;
+  for (int i = 0 ; i < Overhang ; i++)
+    if (Tr.Initial.Tape.at(i) != TD0.Repeater[Wall - 1].at((i + Rotate) % Stride))
+      TM_ERROR() ;
 
-      // Rotate the Repeater accordingly
-      std::vector<uint8_t> Repeater = TD0.Repeater[Wall - 1] ;
-      for (uint32_t i = 0 ; i < Repeater.size() ; i++)
-        TD0.Repeater[Wall - 1].at(i) = Repeater.at((i + Rotate) % Stride) ;
+  // Check that the destination wall ends with the same copies
+  for (int i = 0 ; i < int(Overhang - Stride) ; i++)
+    if (Tr.Initial.Tape.at(i) != TD0.Wall[Wall - 1].at(i + TD0.Wall[Wall - 1].size() - Overhang + Stride))
+      TM_ERROR() ;
 
-      Overhang -= Gap ;
-      }
+  // Append the final segment of Tr.Initial.Tape to the destination wall
+  TD0.TapeHeadOffset = TD0.Wall[Wall - 1].size() + Tr.Initial.TapeHead - Overhang ;
+  TD0.Wall[Wall - 1].insert (TD0.Wall[Wall - 1].end(),
+    Tr.Initial.Tape.begin() + Overhang, Tr.Initial.Tape.end()) ;
 
-    // Check that Wall matches Tr.Initial.Tape where they overlap
-    for (uint32_t i = 0 ; i < Tr.Initial.Tape.size() - Overhang ; i++)
-      if (TD0.Wall[Wall].at(i) != Tr.Initial.Tape.at(i + Overhang)) TM_ERROR() ;
+  // Truncate the wall so it ends to the right of Tr.Initial.Tape
+  TD0.Wall[Wall].erase (TD0.Wall[Wall].begin(),
+    TD0.Wall[Wall].begin() + Tr.Initial.Tape.size() - Overhang) ;
 
-    // Check that the rest of Tr.Initial.Tape consists of appropriately aligned
-    // copies of the Repeater
-    int Rotate = Overhang % Stride ; Rotate = Stride - Rotate ; Rotate %= Stride ;
-    for (int i = 0 ; i < Overhang ; i++)
-      if (Tr.Initial.Tape.at(i) != TD0.Repeater[Wall - 1].at((i + Rotate) % Stride))
-        TM_ERROR() ;
-
-    // Check that the destination wall ends with the same copies
-    for (int i = 0 ; i < int(Overhang - Stride) ; i++)
-      if (Tr.Initial.Tape.at(i) != TD0.Wall[Wall - 1].at(i + TD0.Wall[Wall - 1].size() - Overhang + Stride))
-        TM_ERROR() ;
-
-    // Append the final segment of Tr.Initial.Tape to the destination wall
-    TD0.TapeHeadOffset = TD0.Wall[Wall - 1].size() + Tr.Initial.TapeHead - Overhang ;
-    TD0.Wall[Wall - 1].insert (TD0.Wall[Wall - 1].end(),
-      Tr.Initial.Tape.begin() + Overhang, Tr.Initial.Tape.end()) ;
-
-    // Truncate the wall so it ends to the right of Tr.Initial.Tape
-    TD0.Wall[Wall].erase (TD0.Wall[Wall].begin(),
-      TD0.Wall[Wall].begin() + Tr.Initial.Tape.size() - Overhang) ;
-
-    // Replace the Repeater with the final segment of Tr.Final.Tape
-    for (uint32_t i = 0 ; i < Stride ; i++)
-      TD0.Repeater[Wall - 1].at(i) = Tr.Final.Tape.at(Tr.Final.Tape.size() - Stride + i) ;
-    }
-  else
-    {
-    // Tr.Initial.Tape lies entirely inside TD0.Wall. Check that it matches:
-    Overhang = -Overhang ; // 'Underhang' now
-    for (uint32_t i = 0 ; i < Tr.Initial.Tape.size() ; i++)
-      if (Tr.Initial.Tape.at(i) != TD0.Wall[Wall].at(i + Overhang))
-        TM_ERROR() ;
-  
-    // Check that the remaining wall consists of appropriately aligned copies of the Repeater
-    for (int i = 0 ; i < Overhang ; i++)
-      if (TD0.Wall[Wall].at(i) != TD0.Repeater[Wall - 1].at(i % Stride))
-        TM_ERROR() ;
-  
-    // Re-align the wall so that the repeaters start immediately to the left of Tr.Initial.Tape
-    TD0.Wall[Wall - 1].insert (TD0.Wall[Wall - 1].end(),
-      TD0.Wall[Wall].begin(), TD0.Wall[Wall].begin() + Overhang) ;
-    TD0.Wall[Wall].erase (TD0.Wall[Wall].begin(), TD0.Wall[Wall].begin() + Overhang) ;
-  
-    // Rotate the Repeater accordingly
-    std::vector<uint8_t> Repeater = TD0.Repeater[Wall - 1] ;
-    for (uint32_t i = 0 ; i < Repeater.size() ; i++)
-      TD0.Repeater[Wall - 1].at(i) = Repeater.at((i + Overhang) % Stride) ;
-  
-    // This rotated repeater should be an initial segment of Tr.Initial.Tape
-    for (uint32_t i = 0 ; i < Repeater.size() ; i++)
-      if (TD0.Repeater[Wall - 1].at(i) != Tr.Initial.Tape.at(i))
-        TM_ERROR() ;
-  
-    // The final Repeater is the final segment of Tr.Final.Tape
-    TD0.Repeater[Wall - 1].assign (Tr.Final.Tape.end() - Stride, Tr.Final.Tape.end()) ;
-  
-    // Remove Tr.Initial.Tape from the wall
-    TD0.Wall[Wall].erase (TD0.Wall[Wall].begin(), TD0.Wall[Wall].begin() + Tr.Initial.Tape.size()) ;
-  
-    // Append Tr.Initial.Tape to the desination wall
-    TD0.TapeHeadOffset = TD0.Wall[Wall - 1].size() + Tr.Initial.TapeHead ;
-    TD0.Wall[Wall - 1].insert (TD0.Wall[Wall - 1].end(), Tr.Initial.Tape.begin(), Tr.Initial.Tape.end()) ;
-    }
-
+  // Replace the Repeater with the final segment of Tr.Final.Tape
+  for (uint32_t i = 0 ; i < Stride ; i++)
+    TD0.Repeater[Wall - 1].at(i) = Tr.Final.Tape.at(Tr.Final.Tape.size() - Stride + i) ;
   TD0.TapeHeadWall = Wall - 1 ;
 
   // Now TD0 and TD1 should match
@@ -379,100 +314,37 @@ void Bouncer::CheckRightwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, co
   // How much does Tr.Initial.Tape overhang the Wall into the array of Repeaters?
   int Overhang = InitOffset + Tr.Initial.Tape.size() - TD0.Wall[Wall].size() ;
 
-  if (Overhang >= 0)
-    {
-    // If there is a gap between the wall and Tr.Initial.Tape (which can only
-    // happen if TD0.TapeHeadOffset > TD0.Wall[Wall].size()), close it by appending
-    // Repeaters to the current wall, and removing them from the destination wall
-    int Gap = TD0.TapeHeadOffset - TD0.Wall[Wall].size() - Tr.Initial.TapeHead ;
-    if (Gap > 0)
-      {
-      // Check that the destination wall starts with copies of the Repeater
-      if ((int)TD0.Wall[Wall + 1].size() < Gap) TM_ERROR() ;
-      for (int i = 0 ; i < Gap ; i++)
-        if (TD0.Wall[Wall + 1].at(i) != TD0.Repeater[Wall].at(i % Stride)) TM_ERROR() ;
+  if (Overhang < 0) TM_ERROR() ;
 
-      // Append Repeaters to the current wall
-      for (int i = 0 ; i < Gap ; i++)
-        TD0.Wall[Wall].push_back (TD0.Repeater[Wall].at(i % Stride)) ;
+  // Check that there's no gap between the wall and Tr.Initial.Tape
+  if (TD0.TapeHeadOffset > int(TD0.Wall[Wall].size() + Tr.Initial.TapeHead))
+    TM_ERROR() ;
 
-      // Remove them from the destination wall
-      TD0.Wall[Wall + 1].erase (TD0.Wall[Wall + 1].begin(), TD0.Wall[Wall + 1].begin() + Gap) ;
+  // Check that Wall matches Tr.Initial.Tape where they overlap
+  for (uint32_t i = InitOffset ; i < TD0.Wall[Wall].size() ; i++)
+    if (TD0.Wall[Wall].at(i) != Tr.Initial.Tape.at(i - InitOffset)) TM_ERROR() ;
 
-      // Rotate the Repeater accordingly
-      std::vector<uint8_t> Repeater = TD0.Repeater[Wall] ;
-      for (uint32_t i = 0 ; i < Repeater.size() ; i++)
-        TD0.Repeater[Wall].at(i) = Repeater.at((i + Gap) % Stride) ;
-      }
+  // Check that the rest of Tr.Initial.Tape consists of appropriately aligned
+  // copies of the Repeater
+  for (uint32_t i = TD0.Wall[Wall].size() - InitOffset ; i < Tr.Initial.Tape.size() ; i++)
+    if (Tr.Initial.Tape.at(i) != TD0.Repeater[Wall].at((i - (TD0.Wall[Wall].size() - InitOffset)) % Stride))
+      TM_ERROR() ;
 
-    // Check that Wall matches Tr.Initial.Tape where they overlap
-    for (uint32_t i = InitOffset ; i < TD0.Wall[Wall].size() ; i++)
-      if (TD0.Wall[Wall].at(i) != Tr.Initial.Tape.at(i - InitOffset)) TM_ERROR() ;
+  // Check that the destination wall starts with the same copies
+  for (uint32_t i = TD0.Wall[Wall].size() - InitOffset + Stride ; i < Tr.Initial.Tape.size() ; i++)
+    if (Tr.Initial.Tape.at(i) != TD0.Wall[Wall + 1].at(i - (TD0.Wall[Wall].size() - InitOffset + Stride)))
+      TM_ERROR() ;
 
-    // Check that the rest of Tr.Initial.Tape consists of appropriately aligned
-    // copies of the Repeater
-    for (uint32_t i = TD0.Wall[Wall].size() - InitOffset ; i < Tr.Initial.Tape.size() ; i++)
-      if (Tr.Initial.Tape.at(i) != TD0.Repeater[Wall].at((i - (TD0.Wall[Wall].size() - InitOffset)) % Stride))
-        TM_ERROR() ;
+  // Prepend the initial segment of Tr.Initial.Tape to the destination wall
+  TD0.Wall[Wall + 1].insert (TD0.Wall[Wall + 1].begin(), Tr.Initial.Tape.begin(),
+    Tr.Initial.Tape.begin() + TD0.Wall[Wall].size() - InitOffset) ;
 
-    // Check that the destination wall starts with the same copies
-    for (uint32_t i = TD0.Wall[Wall].size() - InitOffset + Stride ; i < Tr.Initial.Tape.size() ; i++)
-      if (Tr.Initial.Tape.at(i) != TD0.Wall[Wall + 1].at(i - (TD0.Wall[Wall].size() - InitOffset + Stride)))
-        TM_ERROR() ;
+  // Truncate the wall so it ends to the left of Tr.Initial.Tape
+  TD0.Wall[Wall].resize (InitOffset) ;
 
-    // Prepend the initial segment of Tr.Initial.Tape to the destination wall
-    TD0.Wall[Wall + 1].insert (TD0.Wall[Wall + 1].begin(), Tr.Initial.Tape.begin(),
-      Tr.Initial.Tape.begin() + TD0.Wall[Wall].size() - InitOffset) ;
-
-    // Truncate the wall so it ends to the left of Tr.Initial.Tape
-    TD0.Wall[Wall].resize (InitOffset) ;
-
-    // Replace the Repeater with the initial segment of Tr.Final.Tape
-    for (uint32_t i = 0 ; i < Stride ; i++)
-      TD0.Repeater[Wall].at(i) = Tr.Final.Tape.at(i) ;
-    }
-  else // Overhang < 0
-    {
-    // Tr.Initial.Tape lies entirely inside TD0.Wall. Check that it matches:
-    Overhang = -Overhang ;// 'Underhang' now
-    for (uint32_t i = 0 ; i < Tr.Initial.Tape.size() ; i++)
-      if (Tr.Initial.Tape.at(i) != TD0.Wall[Wall].at(i + InitOffset))
-        TM_ERROR() ;
-
-    // Check that the remaining wall consists of appropriately aligned copies of the Repeater
-    for (uint32_t i = InitOffset + Tr.Initial.Tape.size() ; i < TD0.Wall[Wall].size() ; i++)
-      {
-      int t = TD0.Wall[Wall].size() - i ;
-      t %= Stride ; t = Stride - t ; t %= Stride ;
-      if (TD0.Wall[Wall].at(i) != TD0.Repeater[Wall].at(t))
-        TM_ERROR() ;
-      }
-
-    // Re-align the walls so that the repeaters start immediately after Tr.Initial.Tape
-    TD0.Wall[Wall + 1].insert (TD0.Wall[Wall + 1].begin(),
-      TD0.Wall[Wall].begin() + InitOffset + Tr.Initial.Tape.size(),
-        TD0.Wall[Wall].end()) ;
-    TD0.Wall[Wall].resize (InitOffset + Tr.Initial.Tape.size()) ;
-
-    // Rotate the Repeater accordingly
-    std::vector<uint8_t> Repeater = TD0.Repeater[Wall] ;
-    for (uint32_t i = 0 ; i < Repeater.size() ; i++)
-      TD0.Repeater[Wall].at((i + Overhang) % Stride) = Repeater.at(i) ;
-
-    // This rotated repeater should be a final segment of Tr.Initial.Tape
-    for (uint32_t i = 0 ; i < Repeater.size() ; i++)
-      if (TD0.Repeater[Wall].at(i) != Tr.Initial.Tape.at(Tr.Initial.Tape.size() - Stride + i))
-        TM_ERROR() ;
-
-    // The final Repeater is the initial segment of Tr.Final.Tape
-    TD0.Repeater[Wall].assign (Tr.Final.Tape.begin(), Tr.Final.Tape.begin() + Stride) ;
-
-    // Remove Tr.Initial.Tape from the wall
-    TD0.Wall[Wall].resize (InitOffset) ;
-
-    // Prepend Tr.Initial.Tape to the desination wall
-    TD0.Wall[Wall + 1].insert (TD0.Wall[Wall + 1].begin(), Tr.Initial.Tape.begin(), Tr.Initial.Tape.end()) ;
-    }
+  // Replace the Repeater with the initial segment of Tr.Final.Tape
+  for (uint32_t i = 0 ; i < Stride ; i++)
+    TD0.Repeater[Wall].at(i) = Tr.Final.Tape.at(i) ;
 
   TD0.TapeHeadOffset = Tr.Initial.TapeHead ;
   TD0.TapeHeadWall = Wall + 1 ;

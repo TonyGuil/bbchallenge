@@ -122,6 +122,8 @@ public:
   void ConvertRunData (RunDescriptor& To, const RunData& From) ;
   bool AnalyseTape (const TuringMachine* TM, TapeDescriptor& TD,
     uint32_t Run, int Leftmost, int Rightmost) ;
+  bool RemoveGap (TapeDescriptor& TD, const Transition& Tr) ;
+  bool TruncateWall (TapeDescriptor& TD, const Transition& Tr) ;
 
   // Verification data
   uint32_t WriteTapeDescriptor (uint8_t* VerificationEntry, const TuringMachine* TM, const TapeDescriptor& TD) const ;

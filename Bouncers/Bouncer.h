@@ -112,8 +112,8 @@ public:
   bool MatchSegments (const Segment& Seg1, const Segment& Seg2) ;
   void CheckTape (const TuringMachine* TM, const TapeDescriptor& TD) ;
   void CheckTransition (const Transition& Tr) const ;
-  void CheckWallTransition (const TapeDescriptor& TD0,
-    const TapeDescriptor& TD1, const Transition& Tr) ;
+  void CheckWallTransition (TapeDescriptor TD0,
+    TapeDescriptor TD1, const Transition& Tr) ;
   void CheckRepeaterTransition (const TapeDescriptor& TD0,
     const TapeDescriptor& TD1, const Transition& Tr) ;
   void CheckLeftwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const Transition& Tr) ;
