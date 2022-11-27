@@ -87,6 +87,8 @@ int main (int argc, char** argv)
   if (fseek (fpin, 0, SEEK_END))
     printf ("fseek failed\n"), exit (1) ;
   uint32_t InputFileSize = ftell (fpin) ;
+  if (InputFileSize & 3) // Must be a multiple of 4 bytes
+    printf ("Invalid input file %s\n", CommandLineParams::InputFile.c_str()), exit (1) ;
   if (fseek (fpin, 0, SEEK_SET))
     printf ("fseek failed\n"), exit (1) ;
 
@@ -108,20 +110,11 @@ int main (int argc, char** argv)
     if (fpBellTxt == 0) printf ("Can't open ProbableBells.umf for writing\n"), exit (1) ;
     }
 
-  uint32_t nTimeLimited = Read32 (fpin) ;
-  uint32_t nSpaceLimited = Read32 (fpin) ;
-  uint32_t nTotal = nTimeLimited + nSpaceLimited ;
-  uint32_t nTimeLimitedBells = 0 ;
-  uint32_t nSpaceLimitedBells = 0 ;
+  uint32_t nMachines = InputFileSize >> 2 ;
+  uint32_t nProbableBells = 0 ;
 
-  if (InputFileSize != 4 * (nTotal + 2))
-    printf ("File size discrepancy\n"), exit (1) ;
-
-  // Write dummy headers
-  Write32 (fpUndecided, 0) ;
-  Write32 (fpUndecided, 0) ;
+  // Write dummy dvf header
   Write32 (fpVerif, 0) ;
-  Write32 (fpBellUmf, 0) ;
 
   if (!CommandLineParams::nThreadsPresent)
     {
@@ -155,15 +148,15 @@ int main (int argc, char** argv)
     }
 
   uint32_t nDecided = 0 ;
-  uint32_t nTimeLimitedDecided = 0 ;
-  uint32_t nSpaceLimitedDecided = 0 ;
   uint32_t nCompleted = 0 ;
   int LastPercent = -1 ;
+  uint32_t nTimeLimitedDecided = 0 ;
+  uint32_t nSpaceLimitedDecided = 0 ;
 
-  if (CommandLineParams::MachineLimitPresent) nTotal = CommandLineParams::MachineLimit ;
-  while (nCompleted < nTotal)
+  if (CommandLineParams::MachineLimitPresent) nMachines = CommandLineParams::MachineLimit ;
+  while (nCompleted < nMachines)
     {
-    uint32_t nRemaining = nTotal - nCompleted ;
+    uint32_t nRemaining = nMachines - nCompleted ;
     if (nRemaining >= CommandLineParams::nThreads * CHUNK_SIZE)
       {
       for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++) ChunkSize[i] = CHUNK_SIZE ;
@@ -207,8 +200,7 @@ int main (int argc, char** argv)
             Write32 (fpUndecided, MachineIndexList[i][j]) ;
             Write32 (fpBellUmf, MachineIndexList[i][j]) ;
             if (fpBellTxt) fprintf (fpBellTxt, "%d\n", MachineIndexList[i][j]) ;
-            if (MachineIndexList[i][j] < Reader.nTimeLimited) nTimeLimitedBells++ ;
-            else nSpaceLimitedBells++ ;
+            nProbableBells++ ;
             VerificationEntry += 4 ;
             break ;
 
@@ -235,7 +227,7 @@ int main (int argc, char** argv)
         }
       }
 
-    int Percent = (nCompleted * 100LL) / nTotal ;
+    int Percent = (nCompleted * 100LL) / nMachines ;
     if (Percent != LastPercent)
       {
       LastPercent = Percent ;
@@ -244,9 +236,7 @@ int main (int argc, char** argv)
     }
   printf ("\n") ;
 
-  // Check that we've reached the end of the input file
-  if (!CommandLineParams::MachineLimitPresent && fread (MachineSpec, 1, 1, fpin) != 0)
-    printf ("\nInput file too long!\n"), exit (1) ;
+  if (fpUndecided) fclose (fpUndecided) ;
   fclose (fpin) ;
 
   Timer = clock() - Timer ;
@@ -260,28 +250,10 @@ int main (int argc, char** argv)
     fclose (fpVerif) ;
     }
 
-  if (fpUndecided)
-    {
-    // Write the undecided file header
-    if (fseek (fpUndecided, 0 , SEEK_SET))
-      printf ("\nfseek failed\n"), exit (1) ;
-    Write32 (fpUndecided, nTimeLimited - nTimeLimitedDecided) ;
-    Write32 (fpUndecided, nSpaceLimited - nSpaceLimitedDecided) ;
+  if (fpBellUmf) fclose (fpBellUmf) ;
+  if (fpBellTxt) fclose (fpBellTxt) ;
 
-    fclose (fpUndecided) ;
-    }
-
-  if (fpBellUmf)
-    {
-    if (fseek (fpBellUmf, 0 , SEEK_SET))
-      printf ("\nfseek failed\n"), exit (1) ;
-    Write32 (fpBellUmf, nTimeLimitedBells) ;
-    Write32 (fpBellUmf, nSpaceLimitedBells) ;
-
-    fclose (fpBellUmf) ;
-    }
-
-  printf ("\nDecided %d out of %d\n", nDecided, nTotal) ;
+  printf ("\nDecided %d out of %d\n", nDecided, nMachines) ;
   printf ("Elapsed time %.3f\n", (double)Timer / CLOCKS_PER_SEC) ;
 
   uint32_t nUnilateral = 0 ;
@@ -290,7 +262,6 @@ int main (int argc, char** argv)
   uint32_t nDouble = 0 ;
   uint32_t nMultiple = 0 ;
   uint32_t nPartitioned = 0 ;
-  uint32_t nBells = 0 ;
 
   uint32_t nRunsMax = 0 ;
   uint32_t nRunsMachine = 0 ;
@@ -309,7 +280,6 @@ int main (int argc, char** argv)
     nDouble      += DeciderArray[i] -> nDouble ;
     nMultiple    += DeciderArray[i] -> nMultiple ;
     nPartitioned += DeciderArray[i] -> nPartitioned ;
-    nBells       += DeciderArray[i] -> nBells ;
 
     if (DeciderArray[i] -> nRunsMax > nRunsMax)
       {
@@ -339,7 +309,7 @@ int main (int argc, char** argv)
   printf ("\n%d Double\n", nDouble) ;
   printf ("%d Multiple\n", nMultiple) ;
   printf ("%d Partitioned\n", nPartitioned) ;
-  printf ("%d Probable Bells\n", nBells) ;
+  printf ("%d Probable Bells\n", nProbableBells) ;
   printf ("\n%d: %d runs\n", nRunsMachine, nRunsMax) ;
   printf ("%d: RepeaterPeriod %d\n", MaxRepeaterMachine, MaxRepeaterPeriod) ;
   if (MinStat != INT_MAX) printf ("\n%d: MinStat = %d\n", MinStatMachine, MinStat) ;

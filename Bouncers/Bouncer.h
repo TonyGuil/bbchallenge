@@ -109,7 +109,7 @@ public:
     } ;
 
   // Verification functions
-  bool MatchSegments (const Segment& Seg1, const Segment& Seg2) ;
+  void CheckFollowOn (const Segment& Seg1, const Segment& Seg2) ;
   void CheckTape (const TuringMachine* TM, const TapeDescriptor& TD) ;
   void CheckTransition (const Transition& Tr) const ;
   void CheckWallTransition (TapeDescriptor TD0,

@@ -27,7 +27,7 @@ To find Bouncers, we run a machine for a number of cycles (typically 100,000 or 
 
 Now we run the machine for two more Cycles, saving the state and tape head of each step. Then we compare these two Cycles, looking for repeated Runs where the second Cycle is identical to the first except for an extra Repeater. If we can successfully match up each run in the first Cycle with a corresponding run in the second Cycle, we very probably have a Bouncer.
 
-When I say "very probably", I mean that if it passes all the tests during the generation of the Verification Data, then it is a Bouncer; and if it passes enough of these tests, but not all, then it is almost certainly a Bell (e.g. [#73261028](https://bbchallenge.org/73261028)). A Bell is, loosely speaking, a sequence of Bouncers each of which gets interrupted in its journey to infinity and has to start again from scratch, growing exponentially the while. The BouncersDecider program has the option to output binary and text files containing the Probable Bells; no proof is provided, but such files will be useful for the development of any Bell Decider.
+When I say "very probably", I mean that if it passes all the tests during the generation of the Verification Data, then it is a Bouncer; and if it passes enough of these tests, but not all, then it is almost certainly a Bell (e.g. [#73261028](https://bbchallenge.org/73261028)). A Bell is, loosely speaking, a sequence of Bouncers each of which gets interrupted in its journey to infinity and has to start again from scratch, growing exponentially the while. The DecideBouncers program has the option to output binary and text files containing the Probable Bells; no proof is provided, but such files will be useful for the development of any Bell Decider.
 
 #### VerificationInfo
 
@@ -109,13 +109,15 @@ ByteArray:
   ubyte Data[Len]
 ```
 
-#### The Verification Process: the Easy Parts
+#### The Verification Process
+
+All functions referenced in the following description can be found in `Bouncer.cpp`.
 
 ##### 1. Initialisation
-Run the machine for `InitialSteps` steps. Check that `InitialLeftmost` and `InitialRightmost` are correct (this is important to distinguish Bouncers from Bells). Check that `InitialTape` accurately describes the machine (state, tape head, and tape).
+Run the machine for `InitialSteps` steps. Check that `InitialLeftmost` and `InitialRightmost` are correct (this is important to distinguish Bouncers from Bells). Check that `InitialTape` accurately describes the machine (state, tape head, and tape) (function `CheckTape`).
 
 ##### 2. Per-Transition Verification
-For each `RepeaterTransition` and `WallTransition`, verify that executing `nSteps` from the `Initial` segment takes you to the `Final` segment, without leaving the segment boundaries.
+For each `RepeaterTransition` and `WallTransition`, verify that executing `nSteps` from the `Initial` segment takes you to the `Final` segment, without leaving the segment boundaries (function `CheckTransition`).
 
 ##### 3. Inter-Transition Verification
 We say that `Transition Tr2` *follows on from* `Transition Tr1` if:
@@ -127,18 +129,50 @@ We say that `Transition Tr2` *follows on from* `Transition Tr1` if:
      1[1]0110
 ```
 
-and check that the overlap is the same (`1[1]01`) in both tapes.
+and check that the overlap is the same (`1[1]01`) in both tapes (function `CheckTransition`).
 
-Now check that for each `RunDescriptor`, `RepeaterTransition` follows on from itself; and `WallTransition` follows on from `RepeaterTransition`. And check that for each `RunDescriptor` except the first, `RepeaterTransition` follows on from `WallTransition` from the previous `RunDescriptor`. And to complete the Cycle, check that the `RepeaterTransition` of the first `RunDescriptor` follows on from the `WallTransition` of the last `RunDescriptor`.
+Now check that for each `RunDescriptor`, `RepeaterTransition` follows on from itself; and `WallTransition` follows on from `RepeaterTransition`. And check that for each `RunDescriptor` except the first, `RepeaterTransition` follows on from `WallTransition` from the previous `RunDescriptor`. And to complete the Cycle, check that the `RepeaterTransition` of the first `RunDescriptor` follows on from the `WallTransition` of the last `RunDescriptor` (function `CheckFollowOn`).
 
 ##### 4. TapeDescriptor Verification
-For each `RunDescriptor`, execute its `RepeaterTransition` `RepeaterCount[Partition]` times, and check that `TD0` correctly describes the state of the machine; execute its `WallTransition` once, and check that `TD1` correctly describes the state of the machine.
+For each `RunDescriptor`, execute its `RepeaterTransition` `RepeaterCount[Partition]` times, and check that `TD0` correctly describes the state of the machine; execute its `WallTransition` once, and check that `TD1` correctly describes the state of the machine (function `CheckTape`).
 
-##### 5. Complete the Cycle
-`TapeDescriptor TD1` in the last `RunDescriptor` describes the state of the machine after it has executed all the `Transitions` in the Cycle. Now adjust `InitialTape` by appending a single `Repeater` to each `Wall` (i.e. set `InitialTape.Wall[i] += InitialTape.Repeater[i]` for each partition `i`). After doing this, `InitialTape` should describe exactly the same tape as `TD1`. (You will have to adjust `Leftmost`, `Rightmost`, and `TapeHeadOffset` fields for this, so perhaps this step should come under "mostly Easy".)
+##### 5. Transition Verification
+For each `RunDescriptor`, check that `RepeaterTransition` transforms the previous tape contents into `TD0`; and check that `WallTransition` transforms `TD0` into `TD1`. To avoid disrupting the flow, these steps are described in detail in the following section ("Transition Verification in Detail").
 
-#### The Verification Process: the Hard Parts
+##### 6. Complete the Cycle
+`TapeDescriptor TD1` in the last `RunDescriptor` describes the state of the machine after it has executed all the `Transitions` in the Cycle. Now adjust `InitialTape` by appending a single `Repeater` to each `Wall` (i.e. set `InitialTape.Wall[i] += InitialTape.Repeater[i]` for each partition `i`). After doing this, and adjusting the `Leftmost`, `Rightmost`, and `TapeHeadOffset` fields accordingly (functions 'ExpandTapeLeftward` and `ExpandTapeRightward`), `InitialTape` should describe exactly the same tape as `TD1` (function `CheckTapesEquivalent`).
 
-To complete the Verification Process, we have to check that each `Transition` really does transform its preceding `TapeDescriptor` to its following `TapeDescriptor`.
+This is enough to conclude that the Cycle repeats indefinitely, and the machine is therefore a genuine Bouncer.
 
-TO BE CONTINUED...
+#### Transition Verification in Detail
+For each `RunDescriptor`, we have to check that `RepeaterTransition` transforms the previous tape contents into `TD0`; and check that `WallTransition` transforms `TD0` into `TD1`. We describe the procedure for the case that the `Repeater` moves from left to right; the right-to-left case is similar. We start with the simpler case:
+
+##### 1. WallTransition Verification (function `CheckWallTransition)
+
+We are given a `TapeDescriptor` `TD0`, of which the relevant part looks like this:
+
+```
+TD0: ...RepL | RepL | RepL | Wall | RepR | RepR | RepR...
+```
+
+and a `WallTransition` `Tr` whose tape segment may extend outside the boundaries of the `Wall`:
+
+```
+TD0: ...RepL | RepL | RepL | Wall | RepR | RepR | RepR...
+Tr:                     | Tr.Initial |
+```
+
+The position of `Tr.Initial` relative to `Wall` is determined by the tape head positions `Tr.Initial.TapeHead` and `TD0.TapeHeadOffset`.
+
+First, we expand the Wall so that it entirely contains `Tr.Initial`, by incorporating a whole number of `RepL` and/or `RepR` repreaters:
+
+```
+TD0: ...RepL | RepL |        Wall'       | RepR | RepR...
+Tr:                     | Tr.Initial |
+```
+
+When we do this, we have to apply the same procedure to `TD1` so that their `RepeaterCounts` remain in synch. The functions `ExpandWallsLeftward` and `ExpandWallsRightward` perform these expansions.
+
+Now we check that `Tr.Initial` matches `Wall'` where they overlap; and we overwrite this overlapping region of `Wall` with `Tr.Final`, updating the `TD0.State` and `TD0.TapeHeadOffset` accordingly.
+
+Finally we check that this transformed `TD0` describes the same tape, state, and tape head as `TD1` (function `CheckTapesEquivalent`).

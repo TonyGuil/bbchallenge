@@ -73,7 +73,7 @@ bool BouncerDecider::RunDecider (const uint8_t* MachineSpec, uint8_t* Verificati
 
 bool BouncerDecider::DetectRepetition (Record* LatestRecord[], uint8_t State, uint8_t* VerificationEntry)
   {
-  #define BACKWARD_SCAN_LENGTH 10
+  #define BACKWARD_SCAN_LENGTH 1000
   Record* Workspace[4 * BACKWARD_SCAN_LENGTH] ;
   Record* Latest = LatestRecord[State] ;
 
@@ -828,19 +828,13 @@ bool BouncerDecider::CheckRuns()
     CheckTransition (SD.RepeaterTransition) ;
     CheckTransition (SD.WallTransition) ;
 
-    if (!MatchSegments (SD.RepeaterTransition.Final, SD.RepeaterTransition.Initial))
-      TM_ERROR() ;
+    CheckFollowOn (SD.RepeaterTransition.Final, SD.RepeaterTransition.Initial) ;
     if (SD.WallTransition.Initial.Tape.empty())
-      {
-      if (!MatchSegments (SD.RepeaterTransition.Final, NextSD.RepeaterTransition.Initial))
-        TM_ERROR() ;
-      }
+      CheckFollowOn (SD.RepeaterTransition.Final, NextSD.RepeaterTransition.Initial) ;
     else
       {
-      if (!MatchSegments (SD.RepeaterTransition.Final, SD.WallTransition.Initial))
-        TM_ERROR() ;
-      if (!MatchSegments (SD.WallTransition.Final, NextSD.RepeaterTransition.Initial))
-        TM_ERROR() ;
+      CheckFollowOn (SD.RepeaterTransition.Final, SD.WallTransition.Initial) ;
+      CheckFollowOn (SD.WallTransition.Final, NextSD.RepeaterTransition.Initial) ;
       }
     }
 

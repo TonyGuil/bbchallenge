@@ -52,16 +52,13 @@ void BouncerVerifier::Verify (uint32_t SeedDatabaseIndex, const uint8_t* Machine
     // Check that each Transition is compatible with its predecessor and follower.
     // This includes checking that a RepeaterTransition is compatible with itself.
     if (i == 0) FirstSeg = RD.RepeaterTransition.Initial ; // to be checked at the end
-    else if (!MatchSegments (PreviousSeg, RD.RepeaterTransition.Initial))
-      VERIFY_ERROR() ;
-    if (!MatchSegments (RD.RepeaterTransition.Final, RD.RepeaterTransition.Initial))
-      VERIFY_ERROR() ;
+    else CheckFollowOn (PreviousSeg, RD.RepeaterTransition.Initial) ;
+    CheckFollowOn (RD.RepeaterTransition.Final, RD.RepeaterTransition.Initial) ;
     if (RD.WallTransition.Initial.Tape.empty())
       PreviousSeg = RD.RepeaterTransition.Final ;
     else
       {
-      if (!MatchSegments (RD.RepeaterTransition.Final, RD.WallTransition.Initial))
-        VERIFY_ERROR() ;
+      CheckFollowOn (RD.RepeaterTransition.Final, RD.WallTransition.Initial) ;
       PreviousSeg = RD.WallTransition.Final ;
       }
 
@@ -87,7 +84,7 @@ void BouncerVerifier::Verify (uint32_t SeedDatabaseIndex, const uint8_t* Machine
     }
 
   // Check that the last Transition segment wraps around correctly to the first
-  if (!MatchSegments (PreviousSeg, FirstSeg)) VERIFY_ERROR() ;
+  CheckFollowOn (PreviousSeg, FirstSeg) ;
 
   // Check FinalSteps, FinalLeftmost, and FinalRightmost
   if (StepCount != FinalSteps) VERIFY_ERROR() ;

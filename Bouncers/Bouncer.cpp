@@ -72,11 +72,11 @@ void Bouncer::CheckTransition (const Transition& Tr) const
   if (Tape != Tr.Final.Tape) TM_ERROR() ;
   }
 
-bool Bouncer::MatchSegments (const Segment& Seg1, const Segment& Seg2)
+void Bouncer::CheckFollowOn (const Segment& Seg1, const Segment& Seg2)
   {
-  if (Seg1.State != Seg2.State) return false ;
+  if (Seg1.State != Seg2.State) TM_ERROR() ;
 
-  if (Seg1.Tape.empty() || Seg2.Tape.empty()) return true ;
+  if (Seg1.Tape.empty() || Seg2.Tape.empty()) return ;
 
   int Shift = Seg1.TapeHead - Seg2.TapeHead ;
   int Left = 0 ;
@@ -84,7 +84,7 @@ bool Bouncer::MatchSegments (const Segment& Seg1, const Segment& Seg2)
   if (Shift > 0)
     {
     Left = Shift ;
-    if (Left > (int)Seg1.Tape.size()) return false ;
+    if (Left > (int)Seg1.Tape.size()) TM_ERROR() ;
     if (Right > int (Seg2.Tape.size() + Shift))
       Right = Seg2.Tape.size() + Shift ;
     }
@@ -94,12 +94,10 @@ bool Bouncer::MatchSegments (const Segment& Seg1, const Segment& Seg2)
     if (Right > (int)Seg1.Tape.size())
       Right = Seg1.Tape.size() ;
     }
-  if (Left > Right) return false ;
+  if (Left > Right) TM_ERROR() ;
   for (int i = Left ; i < Right ; i++)
     if ((Seg1.Tape.at(i) ^ Seg2.Tape.at(i - Shift)) == 1)
-      return false ;
-
-  return true ;
+      TM_ERROR() ;
   }
 
 // void Bouncer::CheckWallTransition (TapeDescriptor TD0,
