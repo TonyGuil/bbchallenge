@@ -99,10 +99,14 @@ void BouncerVerifier::Verify (uint32_t SeedDatabaseIndex, const uint8_t* Machine
   // Pad out PreviousTape to match the new version of InitialTape
   int LeftmostShift = InitialLeftmost - FinalLeftmost ;
   int RightmostShift = FinalRightmost - InitialRightmost ;
-  if (LeftmostShift > 0)
-    PreviousTape.Wall[0].insert (PreviousTape.Wall[0].begin(), LeftmostShift, 0) ;
-  if (RightmostShift > 0)
-    PreviousTape.Wall[nPartitions].resize (PreviousTape.Wall[nPartitions].size() + RightmostShift) ;
+  PreviousTape.Wall[0].insert (PreviousTape.Wall[0].begin(), LeftmostShift, 0) ;
+  PreviousTape.Wall[nPartitions].resize (PreviousTape.Wall[nPartitions].size() + RightmostShift) ;
+
+  // Re-calibrate the tape boundaries
+  InitialTape.Leftmost = PreviousTape.Leftmost = FinalLeftmost - LeftmostShift ;
+  InitialTape.Rightmost = PreviousTape.Rightmost = FinalRightmost + RightmostShift ;
+
+  // Adjust TapeHeadOffset
   if (InitialTape.TapeHeadWall == 0) PreviousTape.TapeHeadOffset += LeftmostShift ;
 
   // Now the two tapes should be equivalent

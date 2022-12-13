@@ -6,13 +6,13 @@
 #include <vector>
 #include "../bbchallenge.h"
 
-#define MAX_PARTITIONS     16   // #43477769 has 4 partitions
+#define MAX_PARTITIONS     8    // #43477769 has 4 partitions
 #define MAX_RUNS           500  // #3957107 has 156 runs
 
 #define TAPE_ANY   3
 #define WRAPAROUND 2000
 
-#define VERIF_INFO_MAX_LENGTH 75000 // 259075 has been seen (#3957107)
+#define VERIF_INFO_MAX_LENGTH 500000 // 259075 has been seen (#3957107)
 
 class Bouncer : public TuringMachine
   {
@@ -20,7 +20,6 @@ public:
   Bouncer (uint32_t TimeLimit, uint32_t SpaceLimit, bool TraceOutput)
   : TuringMachine (TimeLimit, SpaceLimit)
   , InitialTape (this)
-  , FinalTape (this)
   , TraceOutput (TraceOutput)
     {
     nUnilateral = 0 ;
@@ -87,9 +86,20 @@ public:
     } ;
 
   TapeDescriptor InitialTape ;
-  TapeDescriptor FinalTape ;
 
-  void CheckTapesEquivalent (const TapeDescriptor& TD0, const TapeDescriptor& TD1) ;
+  void CheckTapesEquivalent (const TapeDescriptor& TD0, const TapeDescriptor& TD1) const ;
+  struct TapePosition
+    {
+    bool InWall ;
+    bool Finished ;
+    uint32_t Partition ;
+    uint32_t Repeat ;
+    uint32_t Offset ;
+    int WallOffset ; // Offset of TapeHeadWall from leftmost tape cell
+    } ;
+  void InitTapePosition (const TapeDescriptor& TD, TapePosition& TP) const ;
+  uint8_t NextCell (const TapeDescriptor& TD, TapePosition& TP, int TapeHeadOffset) const ;
+
 
   // Segment defines a tape segment, a state, and a tape head
   struct Segment 

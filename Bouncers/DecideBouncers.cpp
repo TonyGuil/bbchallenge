@@ -9,7 +9,7 @@
 #include "BouncerDecider.h"
 
 #define CHUNK_SIZE 1024 // Number of machines to assign to each thread
-#define VERIF_AVERAGE_LENGTH 1000 // Max average length of verification entries in a chunk
+#define VERIF_AVERAGE_LENGTH 10000 // Max average length of verification entries in a chunk
 
 class CommandLineParams
   {

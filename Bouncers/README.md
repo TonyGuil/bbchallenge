@@ -1,4 +1,4 @@
-This is a Decider and Verifier for Bouncers. With time limit 100,000, it decides 1,405,856 (91%) of the 1,538,624 machines left undecided by the Backward Reasoning decider, taking about three and a half minutes.
+This is a Decider and Verifier for Bouncers. With time limit 100,000, it decides 1,405,935 (91%) of the 1,538,624 machines left undecided by the Backward Reasoning decider, taking about six minutes. (With a time limit of 1,000,000, it finds an additional 29 Bouncers, but this takes more than five hours.)
 
 The output file Bouncers.dvf is too large to commit to GitHub; run Run.bat (on Windows) to generate it.
 
@@ -28,6 +28,11 @@ To find Bouncers, we run a machine for a number of cycles (typically 100,000 or 
 Now we run the machine for two more Cycles, saving the state and tape head of each step. Then we compare these two Cycles, looking for repeated Runs where the second Cycle is identical to the first except for an extra Repeater. If we can successfully match up each run in the first Cycle with a corresponding run in the second Cycle, we very probably have a Bouncer.
 
 When I say "very probably", I mean that if it passes all the tests during the generation of the Verification Data, then it is a Bouncer; and if it passes enough of these tests, but not all, then it is almost certainly a Bell (e.g. [#73261028](https://bbchallenge.org/73261028)). A Bell is, loosely speaking, a sequence of Bouncers each of which gets interrupted in its journey to infinity and has to start again from scratch, growing exponentially the while. The DecideBouncers program has the option to output binary and text files containing the Probable Bells; no proof is provided, but such files will be useful for the development of any Bell Decider.
+
+The program `DecideBouncers.exe` is compiled from:
+- `DecideBouncers.cpp`, which handles command-line arguments, memory allocation, threads, and file I/O;
+- `BouncerDecider.cpp`, which contains code used only by the Decider (NOTE: little or no effort has been made to render this code comprehensible. View it at your own risk);
+- `Bouncer.cpp`, which contains code common to the Decider and the Verifier. Much of this is nicely commented :-)
 
 #### VerificationInfo
 
@@ -111,6 +116,11 @@ ByteArray:
 
 #### The Verification Process
 
+The program `VerifyBouncers.exe` is compiled from:
+- `VerifyBouncers.cpp`, which handles command-line arguments, memory allocation, and file I/O;
+- `BouncerVerifier.cpp`, which contains code used only by the Verifier;
+- `Bouncer.cpp`, which contains code common to the Decider and the Verifier.
+
 All functions referenced in the following description can be found in `Bouncer.cpp`.
 
 ##### 1. Initialisation
@@ -137,10 +147,10 @@ Now check that for each `RunDescriptor`, `RepeaterTransition` follows on from it
 For each `RunDescriptor`, execute its `RepeaterTransition` `RepeaterCount[Partition]` times, and check that `TD0` correctly describes the state of the machine; execute its `WallTransition` once, and check that `TD1` correctly describes the state of the machine (function `CheckTape`).
 
 ##### 5. Transition Verification
-For each `RunDescriptor`, check that `RepeaterTransition` transforms the previous tape contents into `TD0`; and check that `WallTransition` transforms `TD0` into `TD1`. To avoid disrupting the flow, these steps are described in detail in the following section ("Transition Verification in Detail").
+For each `RunDescriptor`, check that `RepeaterTransition` transforms the previous tape contents into `TD0`; and check that `WallTransition` transforms `TD0` into `TD1`. To avoid disrupting the flow, these steps are described in detail in the following section (**Transition Verification in Detail**).
 
 ##### 6. Complete the Cycle
-`TapeDescriptor TD1` in the last `RunDescriptor` describes the state of the machine after it has executed all the `Transitions` in the Cycle. Now adjust `InitialTape` by appending a single `Repeater` to each `Wall` (i.e. set `InitialTape.Wall[i] += InitialTape.Repeater[i]` for each partition `i`). After doing this, and adjusting the `Leftmost`, `Rightmost`, and `TapeHeadOffset` fields accordingly (functions 'ExpandTapeLeftward` and `ExpandTapeRightward`), `InitialTape` should describe exactly the same tape as `TD1` (function `CheckTapesEquivalent`).
+`TapeDescriptor TD1` in the last `RunDescriptor` describes the state of the machine after it has executed all the `Transitions` in the Cycle. Now adjust `InitialTape` by appending a single `Repeater` to each `Wall` (i.e. set `InitialTape.Wall[i] += InitialTape.Repeater[i]` for each partition `i`). After doing this, and adjusting the `Leftmost`, `Rightmost`, and `TapeHeadOffset` fields accordingly (functions `ExpandTapeLeftward` and `ExpandTapeRightward`), `InitialTape` should describe exactly the same tape as `TD1` (function `CheckTapesEquivalent`).
 
 This is enough to conclude that the Cycle repeats indefinitely, and the machine is therefore a genuine Bouncer.
 
@@ -148,7 +158,6 @@ This is enough to conclude that the Cycle repeats indefinitely, and the machine 
 For each `RunDescriptor`, we have to check that `RepeaterTransition` transforms the previous tape contents into `TD0`; and check that `WallTransition` transforms `TD0` into `TD1`. We describe the procedure for the case that the `Repeater` moves from left to right; the right-to-left case is similar. We start with the simpler case:
 
 ##### 1. WallTransition Verification (function `CheckWallTransition)
-
 We are given a `TapeDescriptor` `TD0`, of which the relevant part looks like this:
 
 ```
@@ -164,7 +173,9 @@ Tr:                     | Tr.Initial |
 
 The position of `Tr.Initial` relative to `Wall` is determined by the tape head positions `Tr.Initial.TapeHead` and `TD0.TapeHeadOffset`.
 
-First, we expand the Wall so that it entirely contains `Tr.Initial`, by incorporating a whole number of `RepL` and/or `RepR` repreaters:
+Check that `Tr.Initial.State` is equal to `TD0.State`.
+
+Expand `Wall` so that it entirely contains `Tr.Initial`, by incorporating a whole number of `RepL` and/or `RepR` repreaters:
 
 ```
 TD0: ...RepL | RepL |        Wall'       | RepR | RepR...
@@ -173,6 +184,47 @@ Tr:                     | Tr.Initial |
 
 When we do this, we have to apply the same procedure to `TD1` so that their `RepeaterCounts` remain in synch. The functions `ExpandWallsLeftward` and `ExpandWallsRightward` perform these expansions.
 
-Now we check that `Tr.Initial` matches `Wall'` where they overlap; and we overwrite this overlapping region of `Wall` with `Tr.Final`, updating the `TD0.State` and `TD0.TapeHeadOffset` accordingly.
+Now we check that `Tr.Initial` matches `Wall'` where they overlap; and we overwrite this overlapping region of `Wall'` with `Tr.Final`, updating the `TD0.State` and `TD0.TapeHeadOffset` accordingly.
 
 Finally we check that this transformed `TD0` describes the same tape, state, and tape head as `TD1` (function `CheckTapesEquivalent`).
+
+##### 2. RepeaterTransition Verification (function `CheckRepeaterTransition`)
+We are given a `RepeaterTransition` `Tr`, and a `TapeDescriptor` `TD0`, of which the relevant part looks like this:
+
+```
+TD0: ...WallL | Rep | Rep |...| Rep | Rep | WallR...
+```
+where `Rep` is repeated `n` times.
+
+Check that `Tr.Initial.State` is equal to `TD0.State`. As with `WallTransition`, we align `Tr` with `WallL` by matching `Tr.Initial.TapeHead` with `TD0.TapeHeadOffset`. When we do this, `Tr.Initial.Tape` should start inside `WallL`, and end at the end of the first repeater:
+
+```
+TD0: ...WallL | Rep | Rep |...| Rep | Rep | WallR...
+Tr:    | Tr.Initial |
+```
+
+Let `d` be the size of `Rep`; check that this is equal to `Tr.Final.TapeHead - Tr.Initial.TapeHead` (in the C++ code, this is the *Stride* of `Tr`).
+
+Check that `Tr.Initial.Tape` agrees with `WallL` where they overlap, and that the last `d` bytes of `Tr.Initial.Tape` are equal to `Rep`.
+
+Now we can express `Tr.Initial.Tape` as `A | Rep`, where `A` equals the right-hand end of `WallL`. And we can express `Tr.Final.Tape` as `Rep' | B` where `Rep'` has size `d`. So `Tr` transforms the tape segment `A | Rep` to the tape segment `Rep' | B`, while advancing the tape head by `d` cells and leaving the machine state unchanged.
+
+So when we execute `Transition Tr` `n` times, we go from this:
+
+```
+TD0: ...WallL | Rep | Rep |...| Rep | Rep | WallR...
+```
+to this:
+```
+TD0: ...WallL' | Rep' | Rep' |...| Rep' | Rep' | B | WallR...
+```
+where `WallL'` is `WallL` with `A` removed from the end.
+
+So, in brief, modify `TD0` by:
+
+- removing `A` from `WallL` ;
+- replacing `Rep` with `Rep'` ;
+- prepending `B` to `WallR` ;
+- adjusting `TapeHeadWall` and `TapeHeadOffset`.
+
+Now we just have to check that the resulting `TapeDescriptor TD0` describes the same tape, state, and tape head as `TD1`.

@@ -7,6 +7,7 @@ class BouncerDecider : public Bouncer
 public:
   BouncerDecider (uint32_t TimeLimit, uint32_t SpaceLimit, bool TraceOutput)
   : Bouncer (TimeLimit, SpaceLimit, TraceOutput)
+  , FinalTape (this)
     {
     Clone = new TuringMachine (TimeLimit, SpaceLimit) ;
 
@@ -68,10 +69,12 @@ public:
   int Cycle2Leftmost, Cycle2Rightmost ;
   int InitialLeftmost, InitialRightmost ;
   int FinalLeftmost, FinalRightmost ;
+  TapeDescriptor FinalTape ;
 
   // For Translated Bouncers: 0, 1, or -1
   int8_t TB_Direction ;
   uint32_t TB_Size ;
+  int TB_Outermost ; // Leftmost or Rightmost
   std::vector<uint8_t> TB_Wall ;
   std::vector<uint8_t> TB_Repeater ;
   uint32_t TB_RepeaterCount ;
@@ -98,6 +101,8 @@ public:
     {
     int RepeaterShift ;
     uint32_t RepeaterCount ;
+    int MaxLeftWallExtent ;
+    int MinRightWallExtent ;
     } ;
   PartitionData PartitionDataArray[MAX_PARTITIONS] ;
 
@@ -105,7 +110,7 @@ public:
 
   bool AssignPartitions() ;
   bool EqualiseRepeaters() ;
-  bool MakeRunDescriptor() ;
+  bool MakeRunDescriptors() ;
 
   struct RunDescriptor
     {
@@ -120,8 +125,16 @@ public:
   RunDescriptor RunDescriptorArray[MAX_RUNS] ;
 
   void ConvertRunData (RunDescriptor& To, const RunData& From) ;
-  bool AnalyseTape (const TuringMachine* TM, TapeDescriptor& TD,
-    uint32_t Run, int Leftmost, int Rightmost) ;
+  bool AnalyseTape_Wall (const TuringMachine* TM, TapeDescriptor& TD, uint32_t CurrentWall,
+    const Transition& Tr, int Leftmost, int Rightmost) ;
+  bool AnalyseTape_Repeater (const TuringMachine* TM, TapeDescriptor& TD, uint32_t CurrentWall,
+    uint32_t CurrentPartition, const Transition& Tr, int Leftmost, int Rightmost) ;
+  void DecrementRepeaterCount (uint32_t Partition) ;
+  void GetMaxWallExtents() ;
+  bool GetRepeaterExtent_leftward (const TuringMachine* TM, uint32_t Partition,
+    int& SequenceStart, int& SequenceEnd, int Leftmost, int Rightmost) ;
+  bool GetRepeaterExtent_rightward (const TuringMachine* TM, uint32_t Partition,
+    int& SequenceStart, int& SequenceEnd, int Leftmost, int Rightmost) ;
   bool RemoveGap (TapeDescriptor& TD, const Transition& Tr) ;
   bool TruncateWall (TapeDescriptor& TD, const Transition& Tr) ;
 
