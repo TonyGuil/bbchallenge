@@ -227,4 +227,4 @@ So, in brief, modify `TD0` by:
 - prepending `B` to `WallR` ;
 - adjusting `TapeHeadWall` and `TapeHeadOffset`.
 
-Now we just have to check that the resulting `TapeDescriptor TD0` describes the same tape, state, and tape head as `TD1`.
+Now we just have to check that the resulting `TapeDescriptor TD0` describes the same tape, state, and tape head as `TD1` (function `CheckTapesEquivalent`).
