@@ -157,7 +157,7 @@ This is enough to conclude that the Cycle repeats indefinitely, and the machine 
 #### Transition Verification in Detail
 For each `RunDescriptor`, we have to check that `RepeaterTransition` transforms the previous tape contents into `TD0`; and check that `WallTransition` transforms `TD0` into `TD1`. We describe the procedure for the case that the `Repeater` moves from left to right; the right-to-left case is similar. We start with the simpler case:
 
-##### 1. WallTransition Verification (function `CheckWallTransition)
+##### 1. WallTransition Verification (function `CheckWallTransition`)
 We are given a `TapeDescriptor` `TD0`, of which the relevant part looks like this:
 
 ```
