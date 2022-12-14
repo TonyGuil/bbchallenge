@@ -4,4 +4,4 @@ UncombedCoconut [reports](https://discuss.bbchallenge.org/t/decider-finite-autom
 
 - 3536 of the remaining 4230 machines are Bouncers. Verification file is Bouncers_Holdouts.dvf.
 
-The remaining 694 machines are in Bouncers_Holdouts.umf.
+The remaining 694 machines are in Bouncers_Holdouts.umf. Of these, 58 appear to be Bells (see ProbableBells.*).
