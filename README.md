@@ -4,6 +4,8 @@ Currently implemented deciders:
   Cyclers
   TranslatedCyclers
   BackwardReasoning
+  HaltingSegments
+  Bouncers
 
 These deciders take as input an Undecided Machine File (umf) from the previous decider and generate a (hopefully shorter) umf file as output, together with a Decider Verification File (dvf) that can be used by a Verifier to verify that all the decided machines are correct.
 
@@ -13,10 +15,7 @@ Unless otherwise noted, all fields are 32-bit big-endian integers, signed (int) 
 
 Format of Undecided Machine File
 --------------------------------
-  uint SpaceLimited  -- Number of space-limited entries
-  uint TimeLimited   -- Number of time-limited entries
-  uint MachineIndex[SpaceLimited + TimeLimited]
-                     -- List of the seed database index of each undecided file, in increasing order
+  The seed dabatase index of each undecided file, in increasing order
 
 Format of Decider Verification File
 -----------------------------------
@@ -30,6 +29,8 @@ Format of Decider Verification File
                      -- 2 = TranslatedCyclers (translated to the right)
                      -- 3 = TranslatedCyclers (translated to the left)
                      -- 4 = BackwardReasoning
+                     -- 5 = HaltingSegments
+                     -- 6 = Bouncers
     uint InfoLength  -- Length of decider-specific info for this machine
     byte  DeciderSpecificInfo[InfoLength]
 
@@ -58,3 +59,10 @@ Format of Decider-specific info
   uint InitialStepCount   -- Number of steps to reach initial configuration
   uint FinalStepCount     -- Number of steps to reach final configuration
   uint MatchLength        -- Length of match
+
+[Decider] BackwardReasoning
+[Decider] HaltingSegments
+  These two deciders currently have no useful Verification info.
+
+[Decider] Bouncers
+  See https://github.com/TonyGuil/bbchallenge/tree/main/Bouncers#readme for a full description.
