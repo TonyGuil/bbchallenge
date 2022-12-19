@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <limits.h>
 #include <vector>
 #include "../bbchallenge.h"
 
