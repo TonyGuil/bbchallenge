@@ -29,7 +29,7 @@
 #include <set>
 #include <boost/thread.hpp>
 
-#include "..\bbchallenge.h"
+#include "../bbchallenge.h"
 
 #define CHUNK_SIZE 256 // Number of machines to assign to each thread
 
@@ -203,7 +203,7 @@ public:
         FreeChain = FreeChain -> Next[0] ;
         return Tree ;
         }
-      printf ("Pool exhaustion (%d exceeded)\n", EndOfPool - Pool), exit (1) ;
+      printf ("Pool exhaustion (%d exceeded)\n", int(EndOfPool - Pool)), exit (1) ;
       }
 
     void Free (TreeType* Tree)
@@ -360,7 +360,7 @@ int main (int argc, char** argv)
         Reader.Read (MachineIndexList[i][j], MachineSpecList[i] + j * MACHINE_SPEC_SIZE) ;
         }
 
-      ThreadList[i] = new boost::thread (HaltingSegment::ThreadFunction,
+      ThreadList[i] = new boost::thread (&HaltingSegment::ThreadFunction,
         DeciderArray[i], ChunkSize[i], MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i]) ;
       }
 

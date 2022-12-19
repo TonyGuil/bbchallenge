@@ -144,7 +144,7 @@ int main (int argc, char** argv)
     for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
       {
       Reader.Read (MachineIndex, MachineSpecList[i], ChunkSize[i]) ;
-      ThreadList[i] = new boost::thread (Cycler::ThreadFunction,
+      ThreadList[i] = new boost::thread (&Cycler::ThreadFunction,
         CyclerArray[i], MachineIndex, ChunkSize[i], MachineSpecList[i], VerificationEntryList[i]) ;
       MachineIndex += ChunkSize[i] ;
       }
