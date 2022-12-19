@@ -200,7 +200,7 @@ int main (int argc, char** argv)
         Reader.Read (MachineIndexList[i][j], MachineSpecList[i] + j * MACHINE_SPEC_SIZE) ;
         }
 
-      ThreadList[i] = new boost::thread (TranslatedCycler::ThreadFunction,
+      ThreadList[i] = new boost::thread (&TranslatedCycler::ThreadFunction,
         DeciderArray[i], ChunkSize[i], MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i]) ;
       }
 
