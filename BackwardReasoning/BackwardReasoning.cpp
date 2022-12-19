@@ -24,7 +24,7 @@
 #include <string>
 #include <vector>
 
-#include "..\bbchallenge.h"
+#include "../bbchallenge.h"
 
 // This Decider can't offer much in the way of verification data. It just saves
 // Leftmost, Rightmost, MaxDepth, and nNodes. No verifier program has been written:
