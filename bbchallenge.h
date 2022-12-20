@@ -4,12 +4,11 @@
 
 #pragma once
 
-//#define BIG_ENDIAN false
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <boost/endian/conversion.hpp>
 
 #define NSTATES        5
 #define MAX_SPACE      12289
@@ -57,44 +56,28 @@ struct StateDesc
   } ;
 
 //
-// Endianness (data files are big-endian, our platform is little-endian)
+// Endianness (data files are big-endian, platform may be big- or little-endian)
 //
 
 inline uint32_t Load32 (const void* p)
   {
-#if BIG_ENDIAN
-  return *(uint32_t*)p ;
-#else
-  return __builtin_bswap32 (*(uint32_t*)p) ;
-#endif
+  return boost::endian::big_to_native<uint32_t> (*(uint32_t*)p) ;
   }
 
 inline uint16_t Load16 (const void* p)
   {
-#if BIG_ENDIAN
-  return *(uint16_t*)p ;
-#else
-  return __builtin_bswap16 (*(uint16_t*)p) ;
-#endif
+  return boost::endian::big_to_native<uint16_t> (*(uint16_t*)p) ;
   }
 
 inline uint32_t Save32 (void* p, uint32_t n)
   {
-#if BIG_ENDIAN
-  *(uint32_t*)p = n ;
-#else
-  *(uint32_t*)p = __builtin_bswap32 (n) ;
-#endif
+  *(uint32_t*)p = boost::endian::native_to_big<uint32_t> (n) ;
   return 4 ;
   }
 
 inline uint32_t Save16 (void* p, uint16_t n)
   {
-#if BIG_ENDIAN
-  *(uint16_t*)p = n ;
-#else
-  *(uint16_t*)p = __builtin_bswap16 (n) ;
-#endif
+  *(uint16_t*)p = boost::endian::native_to_big<uint16_t> (n) ;
   return 2 ;
   }
 
@@ -111,33 +94,21 @@ inline uint32_t Read32 (FILE* fp)
   {
   uint32_t t ;
   if (fread (&t, 4, 1, fp) != 1) printf ("\nRead error in Read32\n"), exit (1) ;
-#if BIG_ENDIAN
-  return t ;
-#else
-  return __builtin_bswap32 (t) ;
-#endif
+  return boost::endian::big_to_native<uint32_t> (t) ;
   }
 
 inline uint32_t Read16u (FILE* fp)
   {
   uint16_t t ;
   if (fread (&t, 2, 1, fp) != 1) printf ("\nRead error in Read16u\n"), exit (1) ;
-#if BIG_ENDIAN
-  return t ;
-#else
-  return __builtin_bswap16 (t) ;
-#endif
+  return boost::endian::big_to_native<uint16_t> (t) ;
   }
 
 inline int32_t Read16s (FILE* fp)
   {
   int16_t t ;
   if (fread (&t, 2, 1, fp) != 1) printf ("\nRead error in Read16s\n"), exit (1) ;
-#if BIG_ENDIAN
-  return t ;
-#else
-  return (int16_t)__builtin_bswap16 (t) ;
-#endif
+  return boost::endian::big_to_native<int16_t> (t) ;
   }
 
 inline uint32_t Read8u (FILE* fp)
@@ -160,9 +131,7 @@ inline int32_t Read8s (FILE* fp)
 
 inline void Write32 (FILE* fp, uint32_t n)
   {
-#if !BIG_ENDIAN
-  n = __builtin_bswap32 (n) ;
-#endif
+  boost::endian::native_to_big_inplace (n) ;
   if (fp && fwrite (&n, 4, 1, fp) != 1)
     printf ("Write error\n"), exit (1) ;
   }
