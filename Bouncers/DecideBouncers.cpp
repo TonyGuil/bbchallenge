@@ -8,7 +8,10 @@
 
 #include "BouncerDecider.h"
 
-#define CHUNK_SIZE 1024 // Number of machines to assign to each thread
+// Number of machines to assign to each thread
+#define DEFAULT_CHUNK_SIZE 256
+static uint32_t ChunkSize = DEFAULT_CHUNK_SIZE ;
+
 #define VERIF_AVERAGE_LENGTH 10000 // Max average length of verification entries in a chunk
 
 class CommandLineParams
@@ -113,9 +116,6 @@ int main (int argc, char** argv)
   uint32_t nMachines = InputFileSize >> 2 ;
   uint32_t nProbableBells = 0 ;
 
-  // Write dummy dvf header
-  Write32 (fpVerif, 0) ;
-
   if (!CommandLineParams::nThreadsPresent)
     {
     CommandLineParams::nThreads = 4 ;
@@ -129,22 +129,29 @@ int main (int argc, char** argv)
     }
   std::vector<boost::thread*> ThreadList (CommandLineParams::nThreads) ;
 
+  // Make sure the progress indicator updates reasonably often
+  if (CommandLineParams::nThreads * ChunkSize * 50 > nMachines)
+    ChunkSize = 1 + nMachines / (50 * CommandLineParams::nThreads) ;
+
+  // Write dummy dvf header
+  Write32 (fpVerif, 0) ;
+
   clock_t Timer = clock() ;
 
   BouncerDecider** DeciderArray = new BouncerDecider*[CommandLineParams::nThreads] ;
   uint32_t** MachineIndexList = new uint32_t*[CommandLineParams::nThreads] ;
   uint8_t** MachineSpecList = new uint8_t*[CommandLineParams::nThreads] ;
   uint8_t** VerificationEntryList = new uint8_t*[CommandLineParams::nThreads] ;
-  uint32_t* ChunkSize = new uint32_t[CommandLineParams::nThreads] ;
+  uint32_t* ChunkSizeArray = new uint32_t[CommandLineParams::nThreads] ;
   for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
     {
     DeciderArray[i] = new BouncerDecider (CommandLineParams::TimeLimit,
       CommandLineParams::SpaceLimit, CommandLineParams::TraceOutput) ;
     DeciderArray[i] -> Clone = new BouncerDecider (CommandLineParams::TimeLimit,
       CommandLineParams::SpaceLimit, CommandLineParams::TraceOutput) ;
-    MachineIndexList[i] = new uint32_t[CHUNK_SIZE] ;
-    MachineSpecList[i] = new uint8_t[MACHINE_SPEC_SIZE * CHUNK_SIZE] ;
-    VerificationEntryList[i] = new uint8_t[VERIF_AVERAGE_LENGTH * CHUNK_SIZE] ;
+    MachineIndexList[i] = new uint32_t[ChunkSize] ;
+    MachineSpecList[i] = new uint8_t[MACHINE_SPEC_SIZE * ChunkSize] ;
+    VerificationEntryList[i] = new uint8_t[VERIF_AVERAGE_LENGTH * DEFAULT_CHUNK_SIZE] ;
     }
 
   uint32_t nDecided = 0 ;
@@ -157,31 +164,31 @@ int main (int argc, char** argv)
   while (nCompleted < nMachines)
     {
     uint32_t nRemaining = nMachines - nCompleted ;
-    if (nRemaining >= CommandLineParams::nThreads * CHUNK_SIZE)
+    if (nRemaining >= CommandLineParams::nThreads * ChunkSize)
       {
-      for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++) ChunkSize[i] = CHUNK_SIZE ;
+      for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++) ChunkSizeArray[i] = ChunkSize ;
       }
     else
       {
       for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
         {
-        ChunkSize[i] = nRemaining / (CommandLineParams::nThreads - i) ;
-        nRemaining -= ChunkSize[i] ;
+        ChunkSizeArray[i] = nRemaining / (CommandLineParams::nThreads - i) ;
+        nRemaining -= ChunkSizeArray[i] ;
         }
       }
 
     std::vector<boost::thread*> ThreadList (CommandLineParams::nThreads) ;
     for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
       {
-      for (uint32_t j = 0 ; j < ChunkSize[i] ; j++)
+      for (uint32_t j = 0 ; j < ChunkSizeArray[i] ; j++)
         {
         MachineIndexList[i][j] = Read32 (fpin) ;
         Reader.Read (MachineIndexList[i][j], MachineSpecList[i] + j * MACHINE_SPEC_SIZE) ;
         }
 
-      ThreadList[i] = new boost::thread (&BouncerDecider::ThreadFunction, DeciderArray[i],
-        ChunkSize[i], MachineIndexList[i], MachineSpecList[i],
-          VerificationEntryList[i], VERIF_AVERAGE_LENGTH * CHUNK_SIZE) ;
+      ThreadList[i] = new boost::thread (BouncerDecider::ThreadFunction, DeciderArray[i],
+        ChunkSizeArray[i], MachineIndexList[i], MachineSpecList[i],
+          VerificationEntryList[i], VERIF_AVERAGE_LENGTH * DEFAULT_CHUNK_SIZE) ;
       }
 
     for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
@@ -192,7 +199,7 @@ int main (int argc, char** argv)
 
       const uint8_t* MachineSpec = MachineSpecList[i] ;
       const uint8_t* VerificationEntry = VerificationEntryList[i] ;
-      for (uint32_t j = 0 ; j < ChunkSize[i] ; j++)
+      for (uint32_t j = 0 ; j < ChunkSizeArray[i] ; j++)
         {
         switch ((int)Load32 (VerificationEntry))
           {

@@ -84,7 +84,6 @@ public:
     {
     uint8_t Partition ;
     int8_t Direction ; // +1 is rightward, -1 is leftward
-    bool Expanding ;   // Almost always true
 
     Config* Repeater ;
     int RepeaterShift ;
@@ -107,6 +106,7 @@ public:
   PartitionData PartitionDataArray[MAX_PARTITIONS] ;
 
   bool FindRepeat (Config* Run1, Config* Run2, RunData& R) ;
+  bool OldFindRepeat (Config* Run1, Config* Run2, RunData& R) ;
 
   bool AssignPartitions() ;
   bool EqualiseRepeaters() ;
@@ -116,7 +116,6 @@ public:
     {
     uint8_t Partition ;
     int8_t Direction ;
-    bool Expanding ;
 
     Transition RepeaterTransition ;
     Transition WallTransition ;

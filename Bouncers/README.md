@@ -1,4 +1,4 @@
-This is a Decider and Verifier for Bouncers. With time limit 100,000, it decides 1,405,935 (91%) of the 1,538,624 machines left undecided by the Backward Reasoning decider, taking about six minutes. (With a time limit of 1,000,000, it finds an additional 29 Bouncers, but this takes more than five hours.)
+This is a Decider and Verifier for Bouncers. With time limit 100,000, it decides 1,405,967 (91%) of the 1,538,624 machines left undecided by the Backward Reasoning decider, taking about four and a half minutes. (With a time limit of 1,000,000, it finds an additional 29 Bouncers, but this takes more than five hours.)
 
 The output file Bouncers.dvf is too large to commit to GitHub; run Run.bat (on Windows) to generate it.
 
