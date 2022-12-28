@@ -129,6 +129,8 @@ int main (int argc, char** argv)
   if (fseek (fpin, 0, SEEK_END))
     printf ("fseek failed\n"), exit (1) ;
   uint32_t InputFileSize = ftell (fpin) ;
+  if (InputFileSize & 3) // Must be a multiple of 4 bytes
+    printf ("Invalid input file %s\n", CommandLineParams::InputFile.c_str()), exit (1) ;
   if (fseek (fpin, 0, SEEK_SET))
     printf ("fseek failed\n"), exit (1) ;
 
@@ -148,23 +150,14 @@ int main (int argc, char** argv)
       printf ("Can't open output file \"%s\"\n", CommandLineParams::VerificationFile.c_str()), exit (1) ;
     }
 
-  uint32_t nTimeLimited = Read32 (fpin) ;
-  uint32_t nSpaceLimited = Read32 (fpin) ;
-  uint32_t nTotal = nTimeLimited + nSpaceLimited ;
+  uint32_t nMachines = InputFileSize >> 2 ;
 
-  if (InputFileSize != 4 * (nTotal + 2))
-    printf ("File size discrepancy\n"), exit (1) ;
-
-  // Write dummy headers
-  Write32 (fpUndecided, 0) ;
-  Write32 (fpUndecided, 0) ;
+  // Write dummy dvf header
   Write32 (fpVerif, 0) ;
 
   clock_t Timer = clock() ;
 
   uint32_t nDecided = 0 ;
-  uint32_t nTimeLimitedDecided = 0 ;
-  uint32_t nSpaceLimitedDecided = 0 ;
   int LastPercent = -1 ;
   uint8_t MachineSpec[MACHINE_SPEC_SIZE] ;
   uint8_t VerificationEntry[VERIF_ENTRY_LENGTH] ;
@@ -172,7 +165,7 @@ int main (int argc, char** argv)
   Save32 (VerificationEntry + 8, VERIF_INFO_LENGTH) ;
 
   BackwardReasoning Decider (CommandLineParams::DepthLimit, MAX_SPACE) ;
-  for (uint32_t Entry = 0 ; Entry < nTotal ; Entry++)
+  for (uint32_t Entry = 0 ; Entry < nMachines ; Entry++)
     {
     uint32_t SeedDatabaseIndex = Read32 (fpin) ;
     Reader.Read (SeedDatabaseIndex, MachineSpec) ;
@@ -186,21 +179,19 @@ int main (int argc, char** argv)
       if (fpVerif && fwrite (VerificationEntry, VERIF_ENTRY_LENGTH, 1, fpVerif) != 1)
         printf ("Write error\n"), exit (1) ;
       nDecided++ ;
-      if (Entry < nTimeLimited) nTimeLimitedDecided++ ;
-      else nSpaceLimitedDecided++ ;
       }
     else Write32 (fpUndecided, SeedDatabaseIndex) ;
 
-    int Percent = ((Entry + 1) * 100LL) / nTotal ;
+    int Percent = ((Entry + 1) * 100LL) / nMachines ;
     if (Percent != LastPercent)
       {
       LastPercent = Percent ;
       printf ("\r%d%% %d %d", Percent, Entry + 1, nDecided) ;
       }
     }
+  printf ("\n") ;
 
-  // Check that we've reached the end of the input file
-  if (fread (MachineSpec, 1, 1, fpin) != 0) printf ("\nInput file too long!\n"), exit (1) ;
+  if (fpUndecided) fclose (fpUndecided) ;
 
   if (fpVerif)
     {
@@ -210,24 +201,11 @@ int main (int argc, char** argv)
     Write32 (fpVerif, nDecided) ;
     fclose (fpVerif) ;
     }
+  fclose (fpin) ;
 
   Timer = clock() - Timer ;
 
-  printf ("\n") ;
-
-  if (fpUndecided)
-    {
-    // Write the undecided file header
-    if (fseek (fpUndecided, 0 , SEEK_SET))
-      printf ("\nfseek failed\n"), exit (1) ;
-    Write32 (fpUndecided, nTimeLimited - nTimeLimitedDecided) ;
-    Write32 (fpUndecided, nSpaceLimited - nSpaceLimitedDecided) ;
-
-    fclose (fpUndecided) ;
-    }
-  fclose (fpin) ;
-
-  printf ("\nDecided %d out of %d\n", nDecided, nTimeLimited + nSpaceLimited) ;
+  printf ("\nDecided %d out of %d\n", nDecided, nMachines) ;
   printf ("Elapsed time %.3f\n", (double)Timer / CLOCKS_PER_SEC) ;
   }
 

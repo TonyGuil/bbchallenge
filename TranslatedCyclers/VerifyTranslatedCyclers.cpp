@@ -291,6 +291,7 @@ void CommandLineParams::PrintHelpAndExit (int status)
 VerifyCyclers <param> <param>...
   <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
            -V<verification file>  Decider Verification File for decided machines
+           -S<space limit>        Max absolute value of tape head (default 50000)
 )*RAW*") ;
   exit (status) ;
   }

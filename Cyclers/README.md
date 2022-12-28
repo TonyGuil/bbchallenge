@@ -1,9 +1,9 @@
 To compile with g++ 7.3.0, run Compile.bat.
 To generate umf and dvf files, run Run.bat.
 
-This Decider takes the 88,664,064 machines from the seed database and classifies 11,229,238 machines as non-halting. Time: 61.8s.
+This Decider takes the 88,664,064 machines from the seed database and classifies 11,229,238 machines as non-halting. Time: 64s.
 
-The Verifier verifies these 11,229,238 machines in a time of 116s.
+The Verifier verifies these 11,229,238 machines in a time of 109s.
 
 Format of Cyclers Verification File
 -----------------------------------

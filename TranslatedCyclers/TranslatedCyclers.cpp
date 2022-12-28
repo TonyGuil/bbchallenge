@@ -101,6 +101,8 @@ int main (int argc, char** argv)
   if (fseek (fpin, 0, SEEK_END))
     printf ("fseek failed\n"), exit (1) ;
   uint32_t InputFileSize = ftell (fpin) ;
+  if (InputFileSize & 3) // Must be a multiple of 4 bytes
+    printf ("Invalid input file %s\n", CommandLineParams::InputFile.c_str()), exit (1) ;
   if (fseek (fpin, 0, SEEK_SET))
     printf ("fseek failed\n"), exit (1) ;
 
@@ -120,24 +122,21 @@ int main (int argc, char** argv)
       printf ("Can't open output file \"%s\"\n", CommandLineParams::VerificationFile.c_str()), exit (1) ;
     }
 
-  uint32_t nTimeLimited = Read32 (fpin) ;
-  uint32_t nSpaceLimited = Read32 (fpin) ;
-  uint32_t nTotal = nTimeLimited + nSpaceLimited ;
+  // Count the space-limited machines in the input file (this is just
+  // so we can give informative percentages in the progress report)
+  uint32_t nTimeLimited = 0 ;
+  uint32_t nSpaceLimited = 0 ;
+  uint32_t nTotal = InputFileSize >> 2 ;
+  for (uint32_t i = 0 ; i < nTotal ; i++)
+    {
+    if (Read32 (fpin) < Reader.nTimeLimited) nTimeLimited++ ;
+    else nSpaceLimited++ ;
+    }
+  if (fseek (fpin, 0, SEEK_SET))
+    printf ("fseek failed\n"), exit (1) ;
 
-  if (InputFileSize != 4 * (nTotal + 2))
-    printf ("File size discrepancy\n"), exit (1) ;
-
-  // Write dummy headers
-  Write32 (fpUndecided, 0) ;
-  Write32 (fpUndecided, 0) ;
+  // Write dummy dvf header
   Write32 (fpVerif, 0) ;
-
-  // The time-limited machines are not expected to yield any Translated Cyclers,
-  // so we just copy them to the umf:
-  printf ("Copying time-limited machines...") ;
-  for (uint32_t Index = 0 ; Index < nTimeLimited ; Index++)
-    Write32 (fpUndecided, Read32 (fpin)) ;
-  printf ("Done\n") ;
 
   if (!CommandLineParams::nThreadsPresent)
     {
@@ -196,8 +195,15 @@ int main (int argc, char** argv)
       {
       for (uint32_t j = 0 ; j < ChunkSize[i] ; j++)
         {
-        MachineIndexList[i][j] = Read32 (fpin) ;
-        Reader.Read (MachineIndexList[i][j], MachineSpecList[i] + j * MACHINE_SPEC_SIZE) ;
+        uint32_t MachineIndex = Read32 (fpin) ;
+        while (MachineIndex < Reader.nTimeLimited)
+          {
+          Write32 (fpUndecided, MachineIndex) ;
+          nTimeLimited-- ;
+          MachineIndex = Read32 (fpin) ;
+          }
+        MachineIndexList[i][j] = MachineIndex ;
+        Reader.Read (MachineIndex, MachineSpecList[i] + j * MACHINE_SPEC_SIZE) ;
         }
 
       ThreadList[i] = new boost::thread (&TranslatedCycler::ThreadFunction,
@@ -234,10 +240,17 @@ int main (int argc, char** argv)
       printf ("\r%d%% %d %d", Percent, nCompleted, nDecided) ;
       }
     }
+  printf ("\n") ;
+
+  // Just in case the input file was not sorted, check for stragglers
+  while (nTimeLimited--)
+    Write32 (fpUndecided, Read32 (fpin)) ;
 
   // Check that we've reached the end of the input file
   if (!CommandLineParams::MachineLimitPresent && fread (MachineSpec, 1, 1, fpin) != 0)
     printf ("\nInput file too long!\n"), exit (1) ;
+
+  if (fpUndecided) fclose (fpUndecided) ;
 
   if (fpVerif)
     {
@@ -250,18 +263,6 @@ int main (int argc, char** argv)
 
   Timer = clock() - Timer ;
 
-  printf ("\n") ;
-
-  if (fpUndecided)
-    {
-    // Write the undecided file header
-    if (fseek (fpUndecided, 0 , SEEK_SET))
-      printf ("\nfseek failed\n"), exit (1) ;
-    Write32 (fpUndecided, nTimeLimited) ;
-    Write32 (fpUndecided, nSpaceLimited - nDecided) ;
-
-    fclose (fpUndecided) ;
-    }
   fclose (fpin) ;
 
   printf ("\nDecided %d out of %d\n", nDecided, nSpaceLimited) ;

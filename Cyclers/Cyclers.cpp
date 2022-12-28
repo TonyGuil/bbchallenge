@@ -85,9 +85,7 @@ int main (int argc, char** argv)
   if (fpVerif == NULL)
     printf ("Can't open output file \"%s\"\n", CommandLineParams::VerificationFile.c_str()), exit (1) ;
 
-  // Write dummy headers
-  Write32 (fpUndecided, 0) ;
-  Write32 (fpUndecided, 0) ;
+  // Write dummy dvf header
   Write32 (fpVerif, 0) ;
 
   if (!CommandLineParams::nThreadsPresent)
@@ -195,11 +193,6 @@ int main (int argc, char** argv)
   for (uint32_t i = Reader.nTimeLimited ; i < Reader.nMachines ; i++)
     Write32 (fpUndecided, i) ;
   printf ("Done\n") ;
-
-  if (fseek (fpUndecided, 0 , SEEK_SET))
-    printf ("\nfseek failed\n"), exit (1) ;
-  Write32 (fpUndecided, Reader.nTimeLimited - nDecided) ;
-  Write32 (fpUndecided, Reader.nSpaceLimited) ;
 
   fclose (fpUndecided) ;
 

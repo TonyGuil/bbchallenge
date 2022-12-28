@@ -4,20 +4,18 @@
 //            -I<input file>         Input file: list of machines to be analysed
 //            -V<verification file>  Output file: verification data for decided machines
 //            -U<undecided file>     Output file: remaining undecided machines
-//            -D<depth limit>        Max search depth
 //            -W<width limit>        Max absolute value of tape head
-//            -N<node limit>         Max number of nodes in search
 //            -M<threads>            Number of threads to run
 //            -X<test machine>       Machine to test
 //            -T                     Print trace output
+//            -L<machine limit>      Max no. of machines to test
 //
 // The HaltingSegments Decider starts from the HALT state and recursively generates 
 // all possible predecessor states within a given tape window, plus all possible
 // predecessor states that could have left the window to the left or right before
-// entering it again. If it can determine that all possible states lie within a
-// distance DepthLimit of the HALT state, and none of these states is the starting
-// state, then there is no way to reach the HALT state from the starting state, and
-// the machine can be flagged as non-halting.
+// entering it again. If it can determine that none of the possible states is the
+// starting state, then there is no way to reach the HALT state from the starting
+// state, and the machine can be flagged as non-halting.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,7 +29,9 @@
 
 #include "../bbchallenge.h"
 
-#define CHUNK_SIZE 256 // Number of machines to assign to each thread
+// Number of machines to assign to each thread
+#define DEFAULT_CHUNK_SIZE 256
+static uint32_t ChunkSize = DEFAULT_CHUNK_SIZE ;
 
 // Decider-specific Verification Data:
 #define VERIF_INFO_LENGTH 20
@@ -55,9 +55,7 @@ public:
   static std::string InputFile ;
   static std::string VerificationFile ;
   static std::string UndecidedFile ;
-  static uint32_t DepthLimit ;    static bool DepthLimitPresent ;
-  static uint32_t WidthLimit ;    static bool WidthLimitPresent ;
-  static uint32_t NodeLimit ;     static bool NodeLimitPresent ;
+  static int WidthLimit ;         static bool WidthLimitPresent ;
   static uint32_t nThreads ;      static bool nThreadsPresent ;
   static uint32_t TestMachine ;   static bool TestMachinePresent ;
   static uint32_t MachineLimit ;  static bool MachineLimitPresent ;
@@ -70,9 +68,7 @@ std::string CommandLineParams::SeedDatabaseFile ;
 std::string CommandLineParams::InputFile ;
 std::string CommandLineParams::VerificationFile ;
 std::string CommandLineParams::UndecidedFile ;
-uint32_t CommandLineParams::DepthLimit ;    bool CommandLineParams::DepthLimitPresent ;
-uint32_t CommandLineParams::WidthLimit ;    bool CommandLineParams::WidthLimitPresent ;
-uint32_t CommandLineParams::NodeLimit ;     bool CommandLineParams::NodeLimitPresent ;
+int CommandLineParams::WidthLimit ;         bool CommandLineParams::WidthLimitPresent ;
 uint32_t CommandLineParams::nThreads ;      bool CommandLineParams::nThreadsPresent ;
 uint32_t CommandLineParams::TestMachine ;   bool CommandLineParams::TestMachinePresent ;
 bool CommandLineParams::TraceOutput ;
@@ -85,32 +81,33 @@ uint32_t CommandLineParams::MachineLimit ;  bool CommandLineParams::MachineLimit
 class HaltingSegment
   {
 public:
-  HaltingSegment (uint32_t DepthLimit, uint32_t SpaceLimit, uint32_t NodeLimit)
-  : DepthLimit (DepthLimit), SpaceLimit (SpaceLimit), NodeLimit (NodeLimit)
+  HaltingSegment (int WidthLimit) : WidthLimit (WidthLimit)
     {
+    WidthLimit |= 1 ; // Should be odd, but no harm in making sure
+
     // Allocate the tape workspace
-    Tape = new uint8_t[2 * SpaceLimit + 1] ;
-    Tape[0] = Tape[2 * SpaceLimit] = TAPE_SENTINEL ;
-    Tape += SpaceLimit ; // so Tape[0] is in the middle
+    Tape = new uint8_t[WidthLimit + 2] ;
+    Tape += (WidthLimit + 1) >> 1 ; // so Tape[0] is in the middle
 
     // Reserve maximum possible lengths for the backward transition vectors,
-    // to avoid having to re-allocate them in the middle of the search (a
-    // mini-optimisation)
+    // to avoid having to re-allocate them between searches (a mini-
+    // optimisation)
     for (int i = 0 ; i <= NSTATES ; i++)
       TransitionTable[i].reserve (2 * NSTATES) ;
 
-    // Initialise the tree pools
-    CompoundTreePool.Initialise (3 * NodeLimit * SpaceLimit) ;
-    SimpleTreePool.Initialise (2 * NodeLimit * SpaceLimit) ;
-
     // Statistics
-    MaxDecidingDepth = new uint32_t[SpaceLimit + 1] ;
-    memset (MaxDecidingDepth, 0, (SpaceLimit + 1) * sizeof (uint32_t)) ;
+    MaxDecidingDepth = new uint32_t[WidthLimit + 1] ;
+    memset (MaxDecidingDepth, 0, (WidthLimit + 1) * sizeof (uint32_t)) ;
+    MaxDecidingDepthMachine = new uint32_t[WidthLimit + 1] ;
+    TotalMatches = 0 ;
+
+    MinStat = INT_MAX ;
+    MaxStat = INT_MIN ;
     }
 
-  // Call Run to analyse a single machine. MachineSpec is in the 30-byte
+  // Call RunDecider to analyse a single machine. MachineSpec is in the 30-byte
   // Seed Database format:
-  bool Run (const uint8_t* MachineSpec) ;
+  bool RunDecider (const uint8_t* MachineSpec) ;
 
   uint32_t SeedDatabaseIndex ;
   uint8_t* Tape ;
@@ -153,8 +150,6 @@ public:
   // SEGMENT TREES
   //
 
-  #define LEAF_NODE (void*)1
-
   struct SimpleTree { SimpleTree* Next[2] ; } ;
   struct ForwardTree { ForwardTree* Next[2] ; } ;
   struct BackwardTree { BackwardTree* Next[2] ; } ;
@@ -164,60 +159,64 @@ public:
     ForwardTree* SubTree ;
     } ;
 
-  bool FindShorterOrEqual (const CompoundTree* Tree, const uint8_t* TapeHead) ;
-  CompoundTree* Insert (CompoundTree* Tree, const uint8_t* TapeHead) ;
+  uint32_t FindShorterOrEqual (const CompoundTree* Tree, const uint8_t* TapeHead) ;
+  CompoundTree* Insert (CompoundTree* Tree, const uint8_t* TapeHead, uint32_t NodeIndex) ;
 
-  bool FindShorterOrEqual (const ForwardTree* subTree, const uint8_t* TapeHead) ;
-  ForwardTree* Insert (ForwardTree* Tree, const uint8_t* TapeHead) ;
+  uint32_t FindShorterOrEqual (const ForwardTree* subTree, const uint8_t* TapeHead) ;
+  ForwardTree* Insert (ForwardTree* Tree, const uint8_t* TapeHead, uint32_t NodeIndex) ;
 
-  bool FindShorterOrEqual (const BackwardTree* subTree, const uint8_t* TapeHead) ;
-  BackwardTree* Insert (BackwardTree* Tree, const uint8_t* TapeHead) ;
+  uint32_t FindShorterOrEqual (const BackwardTree* subTree, const uint8_t* TapeHead) ;
+  BackwardTree* Insert (BackwardTree* Tree, const uint8_t* TapeHead, uint32_t NodeIndex) ;
+
+  template<class T> bool IsLeafNode (T* Tree)
+    {
+    return ((uint32_t)Tree & 1) != 0 ;
+    }
+
+  template<class T> uint32_t TreeAsLeafNode (T* Tree)
+    {
+    return (uint32_t)Tree >> 1 ;
+    }
+
+  template<class T> T* LeafNodeAsTree (uint32_t NodeIndex)
+    {
+    return (T*)(2 * NodeIndex + 1) ;
+    }
 
   template<class TreeType> class TreePool
     {
+    #define BLOCK_SIZE 100000
   public:
-    TreeType* Pool ;
-    TreeType* EndOfPool ;
-    TreeType* HighWater ;
-    TreeType* FreeChain ;
-
-    void Initialise (size_t Size)
+    TreePool()
       {
-      Pool = new TreeType[Size] ;
-      EndOfPool = Pool + Size ;
-      Clear() ;
+      FirstBlock = new Block ;
+      CurrentBlock = FirstBlock ;
+      TreeIndex = 0 ;
       }
+    struct Block
+      {
+      Block* Next = 0 ;
+      TreeType Tree[BLOCK_SIZE] ;
+      } ;
+    Block* FirstBlock ;
+    Block* CurrentBlock ;
+    uint32_t TreeIndex ;
 
     void Clear()
       {
-      HighWater = Pool ;
-      FreeChain = nullptr ;
+      CurrentBlock = FirstBlock ;
+      TreeIndex = 0 ;
       }
 
     TreeType* Allocate()
       {
-      if (HighWater < EndOfPool) return HighWater++ ;
-      if (FreeChain)
+      if (TreeIndex == BLOCK_SIZE)
         {
-        TreeType* Tree = FreeChain ;
-        FreeChain = FreeChain -> Next[0] ;
-        return Tree ;
+        if (CurrentBlock -> Next == 0) CurrentBlock -> Next = new Block ;
+        CurrentBlock = CurrentBlock -> Next ;
+        TreeIndex = 0 ;
         }
-      printf ("Pool exhaustion (%d exceeded)\n", int(EndOfPool - Pool)), exit (1) ;
-      }
-
-    void Free (TreeType* Tree)
-      {
-      Tree -> Next[0] = FreeChain ;
-      FreeChain = Tree ;
-      }
-
-    void RemoveSubNodes (TreeType* Tree)
-      {
-      if (Tree == 0 || Tree == LEAF_NODE) return ;
-      RemoveSubNodes (Tree -> Next[0]) ;
-      RemoveSubNodes (Tree -> Next[1]) ;
-      Free (Tree) ;
+      return &CurrentBlock -> Tree[TreeIndex++] ;
       }
     } ;
 
@@ -228,11 +227,8 @@ public:
   TreePool<CompoundTree> CompoundTreePool ;
   TreePool<SimpleTree> SimpleTreePool ;
 
-  uint32_t DepthLimit ;
-  uint32_t SpaceLimit ;
-  uint32_t NodeLimit ;
-
-  uint32_t HalfWidth ; // Max absolute value of TapeHead
+  uint32_t WidthLimit ; // Must be odd
+  int HalfWidth ;  // Max absolute value of TapeHead = WidthLimit >> 1
 
   //
   // STATISTICS
@@ -242,6 +238,13 @@ public:
   uint32_t MaxDepth ;
   uint32_t nNodes ;
   uint32_t* MaxDecidingDepth ;
+  uint32_t* MaxDecidingDepthMachine ;
+  uint32_t nMatches ;
+  uint32_t TotalMatches ;
+
+  // Whatever we may want to know from time to time:
+  int MaxStat ; uint32_t MaxStatMachine ;
+  int MinStat ; uint32_t MinStatMachine ;
   } ;
 
 int main (int argc, char** argv)
@@ -253,11 +256,10 @@ int main (int argc, char** argv)
   uint8_t MachineSpec[MACHINE_SPEC_SIZE] ;
   if (CommandLineParams::TestMachinePresent)
     {
-    HaltingSegment Decider (CommandLineParams::DepthLimit,
-      CommandLineParams::WidthLimit, CommandLineParams::NodeLimit) ;
+    HaltingSegment Decider (CommandLineParams::WidthLimit) ;
     Decider.SeedDatabaseIndex = CommandLineParams::TestMachine ;
     Reader.Read (Decider.SeedDatabaseIndex, MachineSpec) ;
-    printf ("%d\n", Decider.Run (MachineSpec)) ;
+    printf ("%d\n", Decider.RunDecider (MachineSpec)) ;
     printf ("%d %d\n", Decider.MaxDepth, Decider.nNodes) ;
     exit (0) ;
     }
@@ -268,8 +270,30 @@ int main (int argc, char** argv)
   if (fseek (fpin, 0, SEEK_END))
     printf ("fseek failed\n"), exit (1) ;
   uint32_t InputFileSize = ftell (fpin) ;
+  if (InputFileSize & 3) // Must be a multiple of 4 bytes
+    printf ("Invalid input file %s\n", CommandLineParams::InputFile.c_str()), exit (1) ;
   if (fseek (fpin, 0, SEEK_SET))
     printf ("fseek failed\n"), exit (1) ;
+
+  if (!CommandLineParams::nThreadsPresent)
+    {
+    CommandLineParams::nThreads = 4 ;
+    char* env = getenv ("NUMBER_OF_PROCESSORS") ;
+    if (env)
+      {
+      CommandLineParams::nThreads = atoi (env) ;
+      if (CommandLineParams::nThreads == 0) CommandLineParams::nThreads = 4 ;
+      }
+    printf ("nThreads = %d\n", CommandLineParams::nThreads) ;
+    }
+  std::vector<boost::thread*> ThreadList (CommandLineParams::nThreads) ;
+
+  uint32_t nMachines = InputFileSize >> 2 ;
+  if (CommandLineParams::MachineLimitPresent) nMachines = CommandLineParams::MachineLimit ;
+
+  // Make sure the progress indicator updates reasonably often
+  if (CommandLineParams::nThreads * ChunkSize * 50 > nMachines)
+    ChunkSize = 1 + nMachines / (50 * CommandLineParams::nThreads) ;
 
   FILE* fpUndecided = 0 ;
   if (!CommandLineParams::UndecidedFile.empty())
@@ -287,30 +311,8 @@ int main (int argc, char** argv)
       printf ("Can't open output file \"%s\"\n", CommandLineParams::VerificationFile.c_str()), exit (1) ;
     }
 
-  uint32_t nTimeLimited = Read32 (fpin) ;
-  uint32_t nSpaceLimited = Read32 (fpin) ;
-  uint32_t nTotal = nTimeLimited + nSpaceLimited ;
-
-  if (InputFileSize != 4 * (nTotal + 2))
-    printf ("File size discrepancy\n"), exit (1) ;
-
-  // Write dummy headers
-  Write32 (fpUndecided, 0) ;
-  Write32 (fpUndecided, 0) ;
+  // Write dummy dvf header
   Write32 (fpVerif, 0) ;
-
-  if (!CommandLineParams::nThreadsPresent)
-    {
-    CommandLineParams::nThreads = 4 ;
-    char* env = getenv ("NUMBER_OF_PROCESSORS") ;
-    if (env)
-      {
-      CommandLineParams::nThreads = atoi (env) ;
-      if (CommandLineParams::nThreads == 0) CommandLineParams::nThreads = 4 ;
-      }
-    printf ("nThreads = %d\n", CommandLineParams::nThreads) ;
-    }
-  std::vector<boost::thread*> ThreadList (CommandLineParams::nThreads) ;
 
   clock_t Timer = clock() ;
 
@@ -318,14 +320,13 @@ int main (int argc, char** argv)
   uint32_t** MachineIndexList = new uint32_t*[CommandLineParams::nThreads] ;
   uint8_t** MachineSpecList = new uint8_t*[CommandLineParams::nThreads] ;
   uint8_t** VerificationEntryList = new uint8_t*[CommandLineParams::nThreads] ;
-  uint32_t* ChunkSize = new uint32_t[CommandLineParams::nThreads] ;
+  uint32_t* ChunkSizeArray = new uint32_t[CommandLineParams::nThreads] ;
   for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
     {
-    DeciderArray[i] = new HaltingSegment (CommandLineParams::DepthLimit,
-      CommandLineParams::WidthLimit, CommandLineParams::NodeLimit) ;
-    MachineIndexList[i] = new uint32_t[CHUNK_SIZE] ;
-    MachineSpecList[i] = new uint8_t[MACHINE_SPEC_SIZE * CHUNK_SIZE] ;
-    VerificationEntryList[i] = new uint8_t[VERIF_ENTRY_LENGTH * CHUNK_SIZE] ;
+    DeciderArray[i] = new HaltingSegment (CommandLineParams::WidthLimit) ;
+    MachineIndexList[i] = new uint32_t[ChunkSize] ;
+    MachineSpecList[i] = new uint8_t[MACHINE_SPEC_SIZE * ChunkSize] ;
+    VerificationEntryList[i] = new uint8_t[VERIF_ENTRY_LENGTH * ChunkSize] ;
     }
 
   uint32_t nDecided = 0 ;
@@ -334,34 +335,38 @@ int main (int argc, char** argv)
   uint32_t nCompleted = 0 ;
   int LastPercent = -1 ;
 
-  if (CommandLineParams::MachineLimitPresent) nTotal = CommandLineParams::MachineLimit ;
-  while (nCompleted < nTotal)
+  // Default thread stack size is 2 megabytes, but we need more:
+  boost::thread::attributes ThreadAttributes ;
+  ThreadAttributes.set_stack_size (0x2000000) ; // 32 megabytes
+
+  while (nCompleted < nMachines)
     {
-    uint32_t nRemaining = nTotal - nCompleted ;
-    if (nRemaining >= CommandLineParams::nThreads * CHUNK_SIZE)
+    uint32_t nRemaining = nMachines - nCompleted ;
+    if (nRemaining >= CommandLineParams::nThreads * ChunkSize)
       {
-      for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++) ChunkSize[i] = CHUNK_SIZE ;
+      for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++) ChunkSizeArray[i] = ChunkSize ;
       }
     else
       {
       for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
         {
-        ChunkSize[i] = nRemaining / (CommandLineParams::nThreads - i) ;
-        nRemaining -= ChunkSize[i] ;
+        ChunkSizeArray[i] = nRemaining / (CommandLineParams::nThreads - i) ;
+        nRemaining -= ChunkSizeArray[i] ;
         }
       }
 
     std::vector<boost::thread*> ThreadList (CommandLineParams::nThreads) ;
     for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
       {
-      for (uint32_t j = 0 ; j < ChunkSize[i] ; j++)
+      for (uint32_t j = 0 ; j < ChunkSizeArray[i] ; j++)
         {
         MachineIndexList[i][j] = Read32 (fpin) ;
         Reader.Read (MachineIndexList[i][j], MachineSpecList[i] + j * MACHINE_SPEC_SIZE) ;
         }
 
-      ThreadList[i] = new boost::thread (&HaltingSegment::ThreadFunction,
-        DeciderArray[i], ChunkSize[i], MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i]) ;
+      ThreadList[i] = new boost::thread (ThreadAttributes, boost::bind (
+        HaltingSegment::ThreadFunction, DeciderArray[i], ChunkSizeArray[i],
+        MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i])) ;
       }
 
     for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
@@ -372,7 +377,7 @@ int main (int argc, char** argv)
 
       const uint8_t* MachineSpec = MachineSpecList[i] ;
       const uint8_t* VerificationEntry = VerificationEntryList[i] ;
-      for (uint32_t j = 0 ; j < ChunkSize[i] ; j++)
+      for (uint32_t j = 0 ; j < ChunkSizeArray[i] ; j++)
         {
         if (Load32 (VerificationEntry + 4))
           {
@@ -389,17 +394,17 @@ int main (int argc, char** argv)
         }
       }
 
-    int Percent = (nCompleted * 100LL) / nTotal ;
+    int Percent = (nCompleted * 100LL) / nMachines ;
     if (Percent != LastPercent)
       {
       LastPercent = Percent ;
       printf ("\r%d%% %d %d", Percent, nCompleted, nDecided) ;
       }
     }
+  printf ("\n") ;
 
-  // Check that we've reached the end of the input file
-  if (!CommandLineParams::MachineLimitPresent && fread (MachineSpec, 1, 1, fpin) != 0)
-    printf ("\nInput file too long!\n"), exit (1) ;
+  if (fpUndecided) fclose (fpUndecided) ;
+  fclose (fpin) ;
 
   if (fpVerif)
     {
@@ -412,32 +417,47 @@ int main (int argc, char** argv)
 
   Timer = clock() - Timer ;
 
-  printf ("\n") ;
-
-  if (fpUndecided)
-    {
-    // Write the undecided file header
-    if (fseek (fpUndecided, 0 , SEEK_SET))
-      printf ("\nfseek failed\n"), exit (1) ;
-    Write32 (fpUndecided, nTimeLimited - nTimeLimitedDecided) ;
-    Write32 (fpUndecided, nSpaceLimited - nSpaceLimitedDecided) ;
-
-    fclose (fpUndecided) ;
-    }
-  fclose (fpin) ;
-
-  printf ("\nDecided %d out of %d\n", nDecided, nTimeLimited + nSpaceLimited) ;
+  printf ("\nDecided %d out of %d\n", nDecided, nMachines) ;
   printf ("Elapsed time %.3f\n", (double)Timer / CLOCKS_PER_SEC) ;
 
-  printf ("\nMax search depth for decided machines by segment width:") ;
-  for (uint32_t HalfWidth = 3 ; 2 * HalfWidth <= CommandLineParams::WidthLimit + 1 ; HalfWidth++)
+  printf ("\nMax search depth for decided machines by segment width:\n") ;
+  for (int HalfWidth = 1 ; 2 * HalfWidth + 1 <= CommandLineParams::WidthLimit ; HalfWidth++)
     {
     uint32_t Max = 0 ;
+    uint32_t MaxMachineIndex ;
     for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
       if (DeciderArray[i] -> MaxDecidingDepth[HalfWidth] > Max)
+        {
         Max = DeciderArray[i] -> MaxDecidingDepth[HalfWidth] ;
-    if (Max) printf ("%d: %d\n", 2 * HalfWidth - 1, Max) ;
+        MaxMachineIndex = DeciderArray[i] -> MaxDecidingDepthMachine[HalfWidth] ;
+        }
+    if (Max) printf ("%d: %d (#%d)\n", 2 * HalfWidth + 1, Max, MaxMachineIndex) ;
     }
+
+  uint32_t TotalMatches = 0 ;
+  for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
+    TotalMatches += DeciderArray[i] -> TotalMatches ;
+  printf ("Total matches = %d\n", TotalMatches) ;
+
+  int MinStat = INT_MAX ;
+  uint32_t MinStatMachine = 0 ;
+  int MaxStat = INT_MIN ;
+  uint32_t MaxStatMachine = 0 ;
+  for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
+    {
+    if (DeciderArray[i] -> MaxStat > MaxStat)
+      {
+      MaxStat = DeciderArray[i] -> MaxStat ;
+      MaxStatMachine = DeciderArray[i] -> MaxStatMachine ;
+      }
+    if (DeciderArray[i] -> MinStat < MinStat)
+      {
+      MinStat = DeciderArray[i] -> MinStat ;
+      MinStatMachine = DeciderArray[i] -> MinStatMachine ;
+      }
+    }
+  if (MinStat != INT_MAX) printf ("\n%d: MinStat = %d\n", MinStatMachine, MinStat) ;
+  if (MaxStat != INT_MIN) printf ("\n%d: MaxStat = %d\n", MaxStatMachine, MaxStat) ;
   }
 
 void HaltingSegment::ThreadFunction (int nMachines, const uint32_t* MachineIndexList,
@@ -446,7 +466,7 @@ void HaltingSegment::ThreadFunction (int nMachines, const uint32_t* MachineIndex
   while (nMachines--)
     {
     SeedDatabaseIndex = *MachineIndexList++ ;
-    if (Run (MachineSpecList))
+    if (RunDecider (MachineSpecList))
       {
       Save32 (VerificationEntryList, SeedDatabaseIndex) ;
       Save32 (VerificationEntryList + 4, uint32_t (DeciderTag::HALTING_SEGMENT)) ;
@@ -455,7 +475,7 @@ void HaltingSegment::ThreadFunction (int nMachines, const uint32_t* MachineIndex
       Save32 (VerificationEntryList + 16, Rightmost) ;
       Save32 (VerificationEntryList + 20, MaxDepth) ;
       Save32 (VerificationEntryList + 24, nNodes) ;
-      Save32 (VerificationEntryList + 28, 2 * HalfWidth - 1) ;
+      Save32 (VerificationEntryList + 28, 2 * HalfWidth + 1) ;
       }
     else Save32 (VerificationEntryList + 4, uint32_t (DeciderTag::NONE)) ;
 
@@ -464,7 +484,7 @@ void HaltingSegment::ThreadFunction (int nMachines, const uint32_t* MachineIndex
     }
   }
 
-bool HaltingSegment::Run (const uint8_t* MachineSpec)
+bool HaltingSegment::RunDecider (const uint8_t* MachineSpec)
   {
   for (int i = 0 ; i <= NSTATES ; i++) TransitionTable[i].clear() ;
 
@@ -494,12 +514,12 @@ bool HaltingSegment::Run (const uint8_t* MachineSpec)
         }
       }
 
-  for (HalfWidth = 3 ; 2 * HalfWidth <= CommandLineParams::WidthLimit + 1 ; HalfWidth++)
+  for (HalfWidth = 1 ; 2 * HalfWidth + 1 <= CommandLineParams::WidthLimit ; HalfWidth++)
     {
     // Start in state 0 with unspecified tape
-    memset (Tape - HalfWidth + 1, TAPE_ANY, 2 * HalfWidth - 1) ;
-    Tape[-HalfWidth] = TAPE_SENTINEL_LEFT ;
-    Tape[HalfWidth] = TAPE_SENTINEL_RIGHT ;
+    memset (Tape - HalfWidth, TAPE_ANY, 2 * HalfWidth + 1) ;
+    Tape[-HalfWidth - 1] = TAPE_SENTINEL_LEFT ;
+    Tape[HalfWidth + 1] = TAPE_SENTINEL_RIGHT ;
     Configuration StartConfig ;
     StartConfig.State = 0 ;
     StartConfig.TapeHead = 0 ;
@@ -512,11 +532,21 @@ bool HaltingSegment::Run (const uint8_t* MachineSpec)
 
     MaxDepth = nNodes = 0 ;
     Leftmost = Rightmost = 0 ;
+    nMatches = 0 ;
 
     if (Recurse (0, StartConfig))
       {
       if (MaxDepth > MaxDecidingDepth[HalfWidth])
+        {
         MaxDecidingDepth[HalfWidth] = MaxDepth ;
+        MaxDecidingDepthMachine[HalfWidth] = SeedDatabaseIndex ;
+        }
+      if ((int)nMatches > MaxStat)
+        {
+        MaxStat = nMatches ;
+        MaxStatMachine = SeedDatabaseIndex ;
+        }
+      TotalMatches += nMatches ;
       return true ;
       }
     }
@@ -526,48 +556,56 @@ bool HaltingSegment::Run (const uint8_t* MachineSpec)
 
 bool HaltingSegment::Recurse (uint32_t Depth, const Configuration& Config)
   {
-  if (Depth == DepthLimit) return false ; // Search too deep, no decision possible
-  if (++Depth > MaxDepth) MaxDepth = Depth ;
-
   // Check for possible match with starting configuration
   if (Config.State == 1)
     {
-    int i ; for (i = 1 - HalfWidth ; i < int(HalfWidth) ; i++)
+    int i ; for (i = -HalfWidth ; i <= int(HalfWidth) ; i++)
       if (Tape[i] != 0 && Tape[i] != TAPE_ANY) break ;
-    if (i >= (int)HalfWidth) return false ;
+    if (i > (int)HalfWidth)
+      return false ;
     }
 
-  if (++nNodes > NodeLimit) return false ;
-
-  if (CommandLineParams::TraceOutput)
+  if (Depth != 0)
     {
-    for (int i = 1 - HalfWidth ; i < (int)HalfWidth ; i++)
+    nNodes++ ;
+    if (CommandLineParams::TraceOutput)
       {
-      printf (i == Config.TapeHead ? "[" : i == Config.TapeHead + 1 ? "]" : " ") ;
-      printf ("%c", "01*."[Tape[i]]) ;
+      printf ("State: %c ; ", Config.State + '@') ;
+      for (int i = -HalfWidth - 1 ; i <= (int)HalfWidth + 1 ; i++)
+        {
+        printf (i == Config.TapeHead ? "[" : i == Config.TapeHead + 1 ? "]" : " ") ;
+        printf ("%c", "01*.__"[Tape[i]]) ;
+        }
+      printf (Config.TapeHead == (int)HalfWidth + 1 ? "]" : " ") ;
+      printf (" ; Node: %d ; Depth: %d\n", nNodes, Depth) ;
       }
-    printf (Config.TapeHead == (int)(HalfWidth - 1) ? "]" : " ") ;
-    printf ("%*s%c\n", Depth, "", Config.State + '@') ;
     }
+
+  if (++Depth > MaxDepth) 
+   {
+   if (Depth > 150000) return false ;
+   MaxDepth = Depth ;
+   }
 
   // If we've seen this already, return true
   if (Tape[Config.TapeHead] <= 1)
     {
     CompoundTree*& Tree = AlreadySeen[Config.State][Tape[Config.TapeHead]] ;
-    if (FindShorterOrEqual (Tree, Tape + Config.TapeHead))
-      {
-      if (CommandLineParams::TraceOutput) printf ("Duplicate\n") ;
-      return true ;
-      }
-
-    Tree = Insert (Tree, Tape + Config.TapeHead) ;
+    if (FindShorterOrEqual (Tree, Tape + Config.TapeHead)) return true ;
+    Tree = Insert (Tree, Tape + Config.TapeHead, nNodes) ;
     }
 
   Configuration PrevConfig ;
-  for (const auto& T : TransitionTable[Config.State])
+
+  // Go through the transitions in reverse order, to match Iijil's Go implementation
+  bool ExitedLeft = false, ExitedRight = false ;
+  for (int i = TransitionTable[Config.State].size() - 1 ; i >= 0 ; i--)
     {
+    const auto& T = TransitionTable[Config.State][i] ;
+
     // Update the tape head
-    if (T.Move)
+    if (Depth == 1) PrevConfig.TapeHead = Config.TapeHead ;
+    else if (T.Move)
       {
       PrevConfig.TapeHead = Config.TapeHead + 1 ;
       if (PrevConfig.TapeHead > Rightmost) Rightmost = PrevConfig.TapeHead ;
@@ -582,11 +620,19 @@ bool HaltingSegment::Recurse (uint32_t Depth, const Configuration& Config)
     switch (Cell)
       {
       case TAPE_SENTINEL_LEFT: // Exiting tape segment to the left
-        if (!ExitSegmentLeft (Depth, Config.State)) return false ;
+        if (!ExitedLeft)
+          {
+          if (!ExitSegmentLeft (Depth, Config.State)) return false ;
+          ExitedLeft = true ;
+          }
         continue ;
 
       case TAPE_SENTINEL_RIGHT: // Exiting tape segment to the right
-        if (!ExitSegmentRight (Depth, Config.State)) return false ;
+        if (!ExitedRight)
+          {
+          if (!ExitSegmentRight (Depth, Config.State)) return false ;
+          ExitedRight = true ;
+          }
         continue ;
 
       case TAPE_ANY: // New tape cell reached, so just write the expected value
@@ -621,41 +667,41 @@ bool HaltingSegment::Recurse (uint32_t Depth, const Configuration& Config)
 
 bool HaltingSegment::ExitSegmentLeft (uint32_t Depth, uint8_t State)
   {
-  if (Depth == DepthLimit) return false ; // Search too deep, no decision possible
-  if (++Depth > MaxDepth) MaxDepth = Depth ;
+  // Check for all zeroes or unset
+  int i ; for (i = -HalfWidth ; i <= int(HalfWidth) ; i++)
+    if (Tape[i] != 0 && Tape[i] != TAPE_ANY) break ;
+  if (i > (int)HalfWidth)
+    return false ;
 
-  if (++nNodes > NodeLimit) return false ;
+  // If we've seen this already, return true
+  if (FindShorterOrEqual (ExitedLeft, Tape - HalfWidth)) return true ;
+
+  nNodes++ ;
 
   if (CommandLineParams::TraceOutput)
     {
-    for (int i = 1 - HalfWidth ; i < (int)HalfWidth ; i++)
-      printf (" %c", "01*."[Tape[i]]) ;
-    printf (" %*s*\n", Depth, "") ;
+    printf ("State: * ; [_]") ;
+    for (int i = -HalfWidth ; i <= (int)HalfWidth ; i++)
+      printf ("%c ", "01*.__"[Tape[i]]) ;
+    printf ("_  ; Node: %d ; Depth: %d\n", nNodes, Depth) ;
     }
 
-  // Check for all zeroes or unset
-  int i ; for (i = 1 - HalfWidth ; i < int(HalfWidth) ; i++)
-    if (Tape[i] != 0 && Tape[i] != TAPE_ANY) break ;
-  if (i >= (int)HalfWidth) return false ;
+  if (++Depth > MaxDepth) MaxDepth = Depth ;
 
-  // If we've seen this already, return true
-  if (FindShorterOrEqual (ExitedLeft, Tape - HalfWidth + 1))
-    {
-    if (CommandLineParams::TraceOutput) printf ("Left duplicate\n") ;
-    return true ;
-    }
-
-  ExitedLeft = Insert (ExitedLeft, Tape - HalfWidth + 1) ;
+  ExitedLeft = Insert (ExitedLeft, Tape - HalfWidth, nNodes) ;
 
   Configuration PrevConfig ;
-  PrevConfig.TapeHead = 1 - HalfWidth ;
-  uint8_t Cell = Tape[1 - HalfWidth] ;
-  for (const auto& T : LeftOfSegment[Cell])
+  PrevConfig.TapeHead = -HalfWidth ;
+  uint8_t Cell = Tape[-HalfWidth] ;
+
+  // Go through the transitions in reverse order, to match Iijil's Go implementation
+  for (int i = LeftOfSegment[Cell].size() - 1 ; i >= 0 ; i--)
     {
+    const auto& T = LeftOfSegment[Cell][i] ;
     PrevConfig.State = T.State ;
-    Tape[1 - HalfWidth] = T.Read ;
+    Tape[-HalfWidth] = T.Read ;
     if (!Recurse (Depth, PrevConfig)) return false ;
-    Tape[1 - HalfWidth] = Cell ;
+    Tape[-HalfWidth] = Cell ;
     }
 
   return true ;
@@ -663,59 +709,60 @@ bool HaltingSegment::ExitSegmentLeft (uint32_t Depth, uint8_t State)
 
 bool HaltingSegment::ExitSegmentRight (uint32_t Depth, uint8_t State)
   {
-  if (Depth == DepthLimit) return false ; // Search too deep, no decision possible
-  if (++Depth > MaxDepth) MaxDepth = Depth ;
+  // Check for all zeroes or unset
+  int i ; for (i = -HalfWidth ; i <= int(HalfWidth) ; i++)
+    if (Tape[i] != 0 && Tape[i] != TAPE_ANY) break ;
+  if (i > (int)HalfWidth)
+    return false ;
 
-  if (++nNodes > NodeLimit) return false ;
+  // If we've seen this already, return true
+  if (FindShorterOrEqual (ExitedRight, Tape + HalfWidth)) return true ;
+
+  nNodes++ ;
 
   if (CommandLineParams::TraceOutput)
     {
-    for (int i = 1 - HalfWidth ; i < (int)HalfWidth ; i++)
-      printf (" %c", "01*."[Tape[i]]) ;
-    printf (" %*s*\n", Depth, "") ;
+    printf ("State: * ;  _") ;
+    for (int i = -HalfWidth ; i <= (int)HalfWidth ; i++)
+      printf (" %c", "01*.__"[Tape[i]]) ;
+    printf ("[_] ; Node: %d ; Depth: %d\n", nNodes, Depth) ;
     }
 
-  // Check for all zeroes or unset
-  int i ; for (i = 1 - HalfWidth ; i < int(HalfWidth) ; i++)
-    if (Tape[i] != 0 && Tape[i] != TAPE_ANY) break ;
-  if (i >= (int)HalfWidth) return false ;
+  if (++Depth > MaxDepth) MaxDepth = Depth ;
 
-  // If we've seen this already, return true
-  if (FindShorterOrEqual (ExitedRight, Tape + HalfWidth - 1))
-    {
-    if (CommandLineParams::TraceOutput) printf ("Right duplicate\n") ;
-    return true ;
-    }
-
-  ExitedRight = Insert (ExitedRight, Tape + HalfWidth - 1) ;
+  ExitedRight = Insert (ExitedRight, Tape + HalfWidth, nNodes) ;
 
   Configuration PrevConfig ;
-  PrevConfig.TapeHead = HalfWidth - 1 ;
-  uint8_t Cell = Tape[HalfWidth - 1] ;
-  for (const auto& T : RightOfSegment[Cell])
+  PrevConfig.TapeHead = HalfWidth ;
+  uint8_t Cell = Tape[HalfWidth] ;
+
+  // Go through the transitions in reverse order, to match Iijil's Go implementation
+  for (int i = RightOfSegment[Cell].size() - 1 ; i >= 0 ; i--)
     {
+    const auto& T = RightOfSegment[Cell][i] ;
     PrevConfig.State = T.State ;
-    Tape[HalfWidth - 1] = T.Read ;
+    Tape[HalfWidth] = T.Read ;
     if (!Recurse (Depth, PrevConfig)) return false ;
-    Tape[HalfWidth - 1] = Cell ;
+    Tape[HalfWidth] = Cell ;
     }
 
   return true ;
   }
 
-bool HaltingSegment::FindShorterOrEqual (const CompoundTree* Tree, const uint8_t* TapeHead)
+uint32_t HaltingSegment::FindShorterOrEqual (const CompoundTree* Tree, const uint8_t* TapeHead)
   {
-  if (Tree == nullptr) return false ;
+  if (Tree == nullptr) return 0 ;
   for (const uint8_t* p = TapeHead - 1 ; Tree ; p--)
     {
-    if (FindShorterOrEqual (Tree -> SubTree, TapeHead + 1)) return true ;
-    if (*p > 1) return false ;
+    uint32_t NodeIndex = FindShorterOrEqual (Tree -> SubTree, TapeHead + 1) ;
+    if (NodeIndex) return NodeIndex ;
+    if (*p > 1) return 0 ;
     Tree = Tree -> Next[*p] ;
     }
-  return false ;
+  return 0 ;
   }
 
-HaltingSegment::CompoundTree* HaltingSegment::Insert (CompoundTree* Tree, const uint8_t* TapeHead)
+HaltingSegment::CompoundTree* HaltingSegment::Insert (CompoundTree* Tree, const uint8_t* TapeHead, uint32_t NodeIndex)
   {
   if (Tree == 0)
     {
@@ -723,41 +770,41 @@ HaltingSegment::CompoundTree* HaltingSegment::Insert (CompoundTree* Tree, const 
     Tree -> Next[0] = Tree -> Next[1] = 0 ;
     Tree -> SubTree = 0 ;
     }
-  CompoundTree* Node = Tree ;
+  CompoundTree* TreeNode = Tree ;
   for (const uint8_t* p = TapeHead - 1 ; *p <= 1 ; p--)
     {
-    if (Node -> Next[*p] == 0)
+    if (TreeNode -> Next[*p] == 0)
       {
-      Node -> Next[*p] = CompoundTreePool.Allocate() ;
-      Node -> Next[*p] -> Next[0] = Node -> Next[*p] -> Next[1] = 0 ;
-      Node -> Next[*p] -> SubTree = 0 ;
+      TreeNode -> Next[*p] = CompoundTreePool.Allocate() ;
+      TreeNode -> Next[*p] -> Next[0] = TreeNode -> Next[*p] -> Next[1] = 0 ;
+      TreeNode -> Next[*p] -> SubTree = 0 ;
       }
-    Node = Node -> Next[*p] ;
+    TreeNode = TreeNode -> Next[*p] ;
     }
-  Node -> SubTree = Insert (Node -> SubTree, TapeHead + 1) ;
+  TreeNode -> SubTree = Insert (TreeNode -> SubTree, TapeHead + 1, NodeIndex) ;
   return Tree ;
   }
 
-bool HaltingSegment::FindShorterOrEqual (const ForwardTree* Tree, const uint8_t* TapeHead)
+uint32_t HaltingSegment::FindShorterOrEqual (const ForwardTree* Tree, const uint8_t* TapeHead)
   {
   // Tree = 0 means no entries here:
-  if (Tree == 0) return false ;
-  if (Tree == LEAF_NODE) return true ;
+  if (Tree == 0) return 0 ;
+  if (IsLeafNode (Tree)) return TreeAsLeafNode (Tree) ;
 
   for ( ; ; TapeHead++)
     {
-    if (*TapeHead > 1) return false ;
+    if (*TapeHead > 1) return 0 ;
     Tree = Tree -> Next[*TapeHead] ;
-    if (Tree == 0) return false ;
-    if (Tree == LEAF_NODE) return true ;
+    if (Tree == 0) return 0 ;
+    if (IsLeafNode (Tree)) return TreeAsLeafNode (Tree) ;
     if (Tree -> Next[0] == 0 && Tree -> Next[1] == 0)
       printf ("Error 2 in FindShorterOrEqual (ForwardTree)\n"), exit (1) ;
     }
   }
 
-HaltingSegment::ForwardTree* HaltingSegment::Insert (ForwardTree* Tree, const uint8_t* TapeHead)
+HaltingSegment::ForwardTree* HaltingSegment::Insert (ForwardTree* Tree, const uint8_t* TapeHead, uint32_t NodeIndex)
   {
-  if (*TapeHead > 1) return (ForwardTree*)LEAF_NODE ; // Empty string
+  if (*TapeHead > 1) return LeafNodeAsTree<ForwardTree> (NodeIndex) ; // Empty string
 
   if (Tree == 0)
     {
@@ -767,50 +814,46 @@ HaltingSegment::ForwardTree* HaltingSegment::Insert (ForwardTree* Tree, const ui
   else if (Tree -> Next[0] == 0 && Tree -> Next[1] == 0)
     printf ("Error 2 in Insert (ForwardTree)\n"), exit (1) ;
 
-  ForwardTree* Node = Tree ;
+  ForwardTree* TreeNode = Tree ;
   for ( ; ; )
     {
     if (TapeHead[1] > 1)
       {
-      Node -> Next[*TapeHead] = (ForwardTree*)LEAF_NODE ;
+      TreeNode -> Next[*TapeHead] = LeafNodeAsTree<ForwardTree> (NodeIndex) ;
       return Tree ;
       }
-    if (Node -> Next[*TapeHead] == 0)
+    if (TreeNode -> Next[*TapeHead] == 0)
       {
-      Node -> Next[*TapeHead] = (ForwardTree*)SimpleTreePool.Allocate() ;
-      Node -> Next[*TapeHead] -> Next[0] = Node -> Next[*TapeHead] -> Next[1] = 0 ;
+      TreeNode -> Next[*TapeHead] = (ForwardTree*)SimpleTreePool.Allocate() ;
+      TreeNode -> Next[*TapeHead] -> Next[0] = TreeNode -> Next[*TapeHead] -> Next[1] = 0 ;
       }
-    else if (Node -> Next[*TapeHead] == LEAF_NODE)
+    else if (IsLeafNode (TreeNode -> Next[*TapeHead]))
       printf ("Error 1 in Insert (ForwardTree)\n"), exit (1) ;
 
-    Node = Node -> Next[*TapeHead++] ;
+    TreeNode = TreeNode -> Next[*TapeHead++] ;
     }
   }
 
-bool HaltingSegment::FindShorterOrEqual (const BackwardTree* Tree, const uint8_t* TapeHead)
+uint32_t HaltingSegment::FindShorterOrEqual (const BackwardTree* Tree, const uint8_t* TapeHead)
   {
   // Tree = 0 means no entries here:
-  if (Tree == 0) return false ;
-  if (Tree == LEAF_NODE) return true ;
+  if (Tree == 0) return 0 ;
+  if (IsLeafNode (Tree)) return TreeAsLeafNode (Tree) ;
 
   for ( ; ; TapeHead--)
     {
-    if (*TapeHead > 1) return false ;
+    if (*TapeHead > 1) return 0 ;
     Tree = Tree -> Next[*TapeHead] ;
-    if (Tree == 0) return false ;
-    if (Tree == LEAF_NODE) return true ;
+    if (Tree == 0) return 0 ;
+    if (IsLeafNode (Tree)) return TreeAsLeafNode (Tree) ;
     if (Tree -> Next[0] == 0 && Tree -> Next[1] == 0)
       printf ("Error 2 in FindShorterOrEqual (BackwardTree)\n"), exit (1) ;
     }
   }
 
-HaltingSegment::BackwardTree* HaltingSegment::Insert (BackwardTree* Tree, const uint8_t* TapeHead)
+HaltingSegment::BackwardTree* HaltingSegment::Insert (BackwardTree* Tree, const uint8_t* TapeHead, uint32_t NodeIndex)
   {
-#if PRUNT
-  Tree = RemoveLongerOrEqual (Tree, TapeHead) ;
-#endif
-
-  if (*TapeHead > 1) return (BackwardTree*)LEAF_NODE ; // Empty string
+  if (*TapeHead > 1) return LeafNodeAsTree<BackwardTree> (NodeIndex) ; // Empty string
 
   if (Tree == 0)
     {
@@ -820,23 +863,23 @@ HaltingSegment::BackwardTree* HaltingSegment::Insert (BackwardTree* Tree, const 
   else if (Tree -> Next[0] == 0 && Tree -> Next[1] == 0)
     printf ("Error 2 in Insert (BackwardTree)\n"), exit (1) ;
 
-  BackwardTree* Node = Tree ;
+  BackwardTree* TreeNode = Tree ;
   for ( ; ; )
     {
     if (TapeHead[-1] > 1)
       {
-      Node -> Next[*TapeHead] = (BackwardTree*)LEAF_NODE ;
+      TreeNode -> Next[*TapeHead] = LeafNodeAsTree<BackwardTree> (NodeIndex) ;
       return Tree ;
       }
-    if (Node -> Next[*TapeHead] == 0)
+    if (TreeNode -> Next[*TapeHead] == 0)
       {
-      Node -> Next[*TapeHead] = (BackwardTree*)SimpleTreePool.Allocate() ;
-      Node -> Next[*TapeHead] -> Next[0] = Node -> Next[*TapeHead] -> Next[1] = 0 ;
+      TreeNode -> Next[*TapeHead] = (BackwardTree*)SimpleTreePool.Allocate() ;
+      TreeNode -> Next[*TapeHead] -> Next[0] = TreeNode -> Next[*TapeHead] -> Next[1] = 0 ;
       }
-    else if (Node -> Next[*TapeHead] == LEAF_NODE)
+    else if (IsLeafNode (TreeNode -> Next[*TapeHead]))
       printf ("Error 1 in Insert (BackwardTree)\n"), exit (1) ;
 
-    Node = Node -> Next[*TapeHead--] ;
+    TreeNode = TreeNode -> Next[*TapeHead--] ;
     }
   }
 
@@ -869,20 +912,10 @@ void CommandLineParams::Parse (int argc, char** argv)
         UndecidedFile = std::string (&argv[0][2]) ;
         break ;
 
-      case 'D':
-        DepthLimit = atoi (&argv[0][2]) ;
-        DepthLimitPresent = true ;
-        break ;
-
       case 'W':
         WidthLimit = atoi (&argv[0][2]) ;
         if (!(WidthLimit & 1)) printf ("Segment width limit must be odd\n"), exit (1) ;
         WidthLimitPresent = true ;
-        break ;
-
-      case 'N':
-        NodeLimit = atoi (&argv[0][2]) ;
-        NodeLimitPresent = true ;
         break ;
 
       case 'M':
@@ -913,9 +946,7 @@ void CommandLineParams::Parse (int argc, char** argv)
   if (!TestMachinePresent && InputFile.empty())
     printf ("Input file not specified\n"), PrintHelpAndExit (1) ;
 
-  if (!DepthLimitPresent) printf ("Depth limit not specified\n"), PrintHelpAndExit (1) ;
-  if (!WidthLimitPresent) printf ("HalfWidth limit not specified\n"), PrintHelpAndExit (1) ;
-  if (!NodeLimitPresent) printf ("Node limit not specified\n"), PrintHelpAndExit (1) ;
+  if (!WidthLimitPresent) printf ("Width limit not specified\n"), PrintHelpAndExit (1) ;
   }
 
 void CommandLineParams::PrintHelpAndExit (int status)
@@ -926,9 +957,7 @@ HaltingSegments <param> <param>...
            -I<input file>         Input file: list of machines to be analysed
            -V<verification file>  Output file: verification data for decided machines
            -U<undecided file>     Output file: remaining undecided machines
-           -D<depth limit>        Max search depth
            -W<width limit>        Max segment width (must be odd)
-           -N<node limit>         Max number of nodes in search
            -M<threads>            Number of threads to run
            -X<test machine>       Machine to test
            -T                     Print trace output

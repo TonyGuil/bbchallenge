@@ -101,7 +101,7 @@ bool TranslatedCycler::Run (const uint8_t* MachineSpec, uint8_t* VerificationEnt
 
 bool TranslatedCycler::DetectRepetition (Record* LatestRecord[], uint8_t State, uint8_t* VerificationEntry)
   {
-  #define BACKWARD_SCAN_LENGTH 2000
+  #define BACKWARD_SCAN_LENGTH 5000
   Record* Workspace[3 * BACKWARD_SCAN_LENGTH] ;
   Record* Latest = LatestRecord[State] ;
 
