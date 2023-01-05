@@ -1,0 +1,1 @@
+This is just a verifier for [UncombedCoconut's NFA decider](https://github.com/UncombedCoconut/bbchallenge-nfa-verification). It verifies the 531584 machines in the current dvf file in 30 seconds.
