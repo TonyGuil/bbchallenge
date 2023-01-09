@@ -446,6 +446,10 @@ void Bouncer::CheckSegment (const TapeDescriptor& TD, const Segment& Seg, uint32
 // void Bouncer::CheckTapesEquivalent (const TapeDescriptor& TD0, const TapeDescriptor& TD1)
 //
 // Checks that two TapeDescriptors define the same tape
+//
+// In fact it checks that the two TapeDescriptors will still define the same
+// tape if we increase their RepeaterCounts by the same amount in each. This
+// is necessary for the Verifier's inductive proof to go through.
 
 void Bouncer::CheckTapesEquivalent (const TapeDescriptor& TD0, const TapeDescriptor& TD1) const
   {
@@ -454,6 +458,34 @@ void Bouncer::CheckTapesEquivalent (const TapeDescriptor& TD0, const TapeDescrip
 
   if (TD0.Leftmost != TD1.Leftmost) TM_ERROR() ;
   if (TD0.Rightmost != TD1.Rightmost) TM_ERROR() ;
+
+  // Check that the repeater parameters match
+  for (uint32_t i = 0 ; i < nPartitions ; i++)
+    {
+    if (TD0.RepeaterCount[i] != TD1.RepeaterCount[i]) TM_ERROR() ;
+    if (TD0.Repeater[i].size() != TD1.Repeater[i].size()) TM_ERROR() ;
+    }
+
+  // Check that the repeater segments overlap by at least the length of one
+  // repeater(this ensures that we can insert more repeaters into the segment
+  // and the two descriptors will still be equivalent)
+  int TapeHead0 = TD0.Leftmost ;
+  int TapeHead1 = TD1.Leftmost ;
+  for (uint32_t i = 0 ; i < nPartitions ; i++)
+    {
+    TapeHead0 += TD0.Wall[i].size() ;
+    TapeHead1 += TD1.Wall[i].size() ;
+    int Overlap = std::max (TapeHead0, TapeHead1) ;
+    TapeHead0 += TD0.RepeaterCount[i] * TD0.Repeater[i].size() ;
+    TapeHead1 += TD1.RepeaterCount[i] * TD1.Repeater[i].size() ;
+    Overlap = std::min (TapeHead0, TapeHead1) - Overlap ;
+
+    if (Overlap < (int)TD0.Repeater[i].size()) TM_ERROR() ;
+    }
+
+  TapeHead0 += TD0.Wall[nPartitions].size() - 1 ;
+  TapeHead1 += TD1.Wall[nPartitions].size() - 1 ;
+  if (TapeHead0 != TD0.Rightmost || TapeHead1 != TD1.Rightmost) TM_ERROR() ;
 
   // Check the tape cells one by one
   TapePosition TP0, TP1 ;

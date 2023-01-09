@@ -150,6 +150,7 @@ void CommandLineParams::PrintHelpAndExit (int status)
 VerifyBouncers <param> <param>...
   <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
            -V<verification file>  Decider Verification File for decided machines
+           -S<space limit>        Max absolute value of tape head
 )*RAW*") ;
   exit (status) ;
   }

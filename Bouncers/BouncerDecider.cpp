@@ -258,7 +258,7 @@ TryAgain:
           {
           VerificationEntry[pVerif++] = (uint8_t)Type ;
           VerificationEntry[pVerif++] = nPartitions ;
-          VerificationEntry[pVerif++] = nRuns ;
+          pVerif += Save16 (VerificationEntry + pVerif, nRuns) ;
           pVerif += Save32 (VerificationEntry + pVerif, StepCount) ;
           pVerif += Save32 (VerificationEntry + pVerif, InitialLeftmost) ;
           pVerif += Save32 (VerificationEntry + pVerif, InitialRightmost) ;
@@ -292,7 +292,6 @@ TryAgain:
             {
             if (pVerif + 10000 > VERIF_INFO_MAX_LENGTH) TM_ERROR() ;
             VerificationEntry[pVerif++] = RD.Partition ;
-            pVerif += Save16 (VerificationEntry + pVerif, RD.RepeaterCount) ;
             pVerif += WriteTransition (VerificationEntry + pVerif,
               RunDescriptorArray[i].RepeaterTransition) ;
             pVerif += WriteTapeDescriptor (VerificationEntry + pVerif, Clone, TD0) ;
@@ -320,6 +319,12 @@ TryAgain:
               RunDescriptorArray[i].WallTransition) ;
             pVerif += WriteTapeDescriptor (VerificationEntry + pVerif, Clone, TD1) ;
             }
+          }
+
+        if (TraceOutput)
+          {
+          printf ("\n") ;
+          PrintTape (InitialTape) ;
           }
 
         FinalTape = TD1 ;
@@ -698,6 +703,8 @@ void BouncerDecider::GetMaxWallExtents()
     PartitionData& PD = PartitionDataArray[i] ;
     PD.MaxLeftWallExtent = INT_MIN ;
     PD.MinRightWallExtent = INT_MAX ;
+    PD.MinRepeaterExtent = INT_MAX ;
+    PD.MaxRepeaterExtent = INT_MIN ;
     }
 
   // Handle Translated Cycler
@@ -742,6 +749,28 @@ void BouncerDecider::GetMaxWallExtents()
         if (RightmostWall > PartitionDataArray[RD.Partition + 1].MaxLeftWallExtent)
           PartitionDataArray[RD.Partition + 1].MaxLeftWallExtent = RightmostWall ;
       }
+
+    int& LeftmostRepeater = PartitionDataArray[RD.Partition].MinRepeaterExtent ;
+    int& RightmostRepeater = PartitionDataArray[RD.Partition].MaxRepeaterExtent ;
+    for (uint32_t j = 0 ; j < RD.RepeaterSteps ; j++)
+      {
+      if (RD.Repeater[j].TapeHead < LeftmostRepeater) LeftmostRepeater = RD.Repeater[j].TapeHead ;
+      if (RD.Repeater[j].TapeHead > RightmostRepeater) RightmostRepeater = RD.Repeater[j].TapeHead ;
+      }
+    }
+
+  // Handle Translated Cycler
+  switch (TB_Direction)
+    {
+    case 1:
+      PartitionDataArray[0].MinRepeaterExtent = TB_Outermost ;
+      PartitionDataArray[0].MaxRepeaterExtent = PartitionDataArray[1].MaxLeftWallExtent ;
+      break ;
+
+    case -1:
+      PartitionDataArray[nPartitions - 1].MinRepeaterExtent =  PartitionDataArray[nPartitions - 2].MinRightWallExtent ;
+      PartitionDataArray[nPartitions - 1].MaxRepeaterExtent = TB_Outermost ;
+      break ;
     }
   }
 
@@ -1345,11 +1374,13 @@ bool BouncerDecider::GetRepeaterExtent_leftward (const TuringMachine* TM, uint32
     while (SequenceStart >= LeftLimit &&
       TM -> Tape[SequenceStart] == TM -> Tape[SequenceStart + PD.RepeaterShift])
         SequenceStart-- ;
-    if (SequenceStart <= SequenceEnd - MinSequenceLen)
-      {
-      SequenceStart++ ;
-      return true ;
-      }
+    if (SequenceStart <= SequenceEnd - MinSequenceLen &&
+      SequenceStart < int(PD.MaxRepeaterExtent - PD.RepeaterShift) &&
+        SequenceEnd >= int(PD.MinRepeaterExtent + PD.RepeaterShift))
+          {
+          SequenceStart++ ;
+          return true ;
+          }
     SequenceEnd = SequenceStart + PD.RepeaterShift ;
     if (SequenceEnd - MinSequenceLen < LeftLimit) return false ;
     }
@@ -1385,11 +1416,13 @@ bool BouncerDecider::GetRepeaterExtent_rightward (const TuringMachine* TM, uint3
     while (SequenceEnd <= RightLimit &&
       TM -> Tape[SequenceEnd] == TM -> Tape[SequenceEnd - PD.RepeaterShift])
         SequenceEnd++ ;
-    if (SequenceEnd >= SequenceStart + MinSequenceLen)
-      {
-      SequenceEnd-- ;
-      return true ;
-      }
+    if (SequenceEnd >= SequenceStart + MinSequenceLen &&
+      SequenceStart <= int(PartitionDataArray[Partition].MaxRepeaterExtent - PD.RepeaterShift) &&
+        SequenceEnd > int(PartitionDataArray[Partition].MinRepeaterExtent + PD.RepeaterShift))
+          {
+          SequenceEnd-- ;
+          return true ;
+          }
     SequenceStart = SequenceEnd - PD.RepeaterShift ;
     if (SequenceStart + MinSequenceLen > RightLimit) return false ;
     }

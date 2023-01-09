@@ -1,6 +1,10 @@
-This is a Decider and Verifier for Bouncers. With time limit 100,000, it decides 1,405,967 (91%) of the 1,538,624 machines left undecided by the Backward Reasoning decider, taking about four and a half minutes. (With a time limit of 1,000,000, it finds an additional 29 Bouncers, but this takes more than five hours.)
+This is a Decider and Verifier for Bouncers.
 
-The output file Bouncers.dvf is too large to commit to GitHub; run Run.bat (on Windows) to generate it.
+- With time limit 100,000, it decides 1,405,967 (91%) of the 1,538,624 machines left undecided by the Backward Reasoning decider, taking about four and a half minutes. The Decider Verification File 100K.dvf and Undecided Machines File 100K.umf are too big to post here; to generate them under Windows, run `Run_100K.bat`.
+
+- With time limit 1,000,000, it finds an additional 43 Bouncers, in about two and a half hours. The results of running `Run_1M.bat` are in 1M.dvf and 1M.umf.
+
+The files ProbableBells.txt and ProbableBells.umf are text and binary dumps of the 18,657 probable bells found in the course of these runs.
 
 #### Introduction
 
@@ -23,11 +27,11 @@ This Decider finds all of these Bouncers.
 
 #### Finding Bouncers
 
-To find Bouncers, we run a machine for a number of cycles (typically 100,000 or more), saving all Records as we encounter them (a Record is when the tape head reaches a cell that it has never visited before). If we find four Records with identical state whose tape heads are in arithmetic progression, but whose step counts are in quadratic progression, then we very probably have a Bouncer (and if it's not a Bouncer, it's almost certainly a Bell -- see below).
+To find Bouncers, we run a machine for a number of steps (typically 100,000 or more), saving all Records as we encounter them (a Record is when the tape head reaches a cell that it has never visited before). If we find four Records with identical state whose tape heads are in arithmetic progression, but whose step counts are in quadratic progression, then we probably have a Bouncer (and if it's not a Bouncer, it's very probably a Bell -- see below).
 
 Now we run the machine for two more Cycles, saving the state and tape head of each step. Then we compare these two Cycles, looking for repeated Runs where the second Cycle is identical to the first except for an extra Repeater. If we can successfully match up each run in the first Cycle with a corresponding run in the second Cycle, we very probably have a Bouncer.
 
-When I say "very probably", I mean that if it passes all the tests during the generation of the Verification Data, then it is a Bouncer; and if it passes enough of these tests, but not all, then it is almost certainly a Bell (e.g. [#73261028](https://bbchallenge.org/73261028)). A Bell is, loosely speaking, a sequence of Bouncers each of which gets interrupted in its journey to infinity and has to start again from scratch, growing exponentially the while. The DecideBouncers program has the option to output binary and text files containing the Probable Bells; no proof is provided, but such files will be useful for the development of any Bell Decider.
+When I say "probably", I mean that if it passes all the tests during the generation of the Verification Data, then it is a Bouncer; and if it passes enough of these tests, but not all, then it is very probably a Bell (e.g. [#73261028](https://bbchallenge.org/73261028)). A Bell is, loosely speaking, a sequence of Bouncers each of which gets interrupted in its journey to infinity and has to start again from scratch, growing exponentially the while. The DecideBouncers program has the option to output binary and text files containing the Probable Bells; no proof is provided, but such files will be useful for the development of any Bell Decider.
 
 The program `DecideBouncers.exe` is compiled from:
 - `DecideBouncers.cpp`, which handles command-line arguments, memory allocation, threads, and file I/O;
@@ -66,7 +70,7 @@ VerificationEntry:
 VerificationInfo: -- information required to verify a perticular Bouncer
   byte BouncerType  -- Unilateral=1, Bilateral=2, Translated=3
   ubyte nPartitions -- usually 1, but can be up to 4 (so far)
-  ubyte nRuns       -- usually 2, but can be up to 156 (so far)
+  ushort nRuns      -- usually 2, but can be up to 156 (so far)
 
   uint InitialSteps    -- Steps to reach the start of the Cycle
   int InitialLeftmost  -- Leftmost cell visited at start of Cycle
@@ -77,13 +81,12 @@ VerificationInfo: -- information required to verify a perticular Bouncer
   int FinalRightmost   -- Rightmost cell visited at end of Cycle
 
   ushort RepeaterCount[nPartitions] -- the Repeater count for each partition
-                                    -- remains constant rhtoughout the cycle
+                                    -- remains constant throughout the cycle
   TapeDescriptor InitialTape   -- Tape contents and state at start of Cycle
   RunDescriptor RunList[nRuns] -- Definition of each Run
 
 RunDescriptor:
   ubyte Partition -- Partiton which the Repeaters traverse
-  ushort RepeaterCount -- Number of times to execute each RepeaterTransition
   Transition RepeaterTransition
   TapeDescriptor TD0 -- Tape contents and state after executing the RepeaterTransitions
   Transition WallTransition
@@ -116,6 +119,12 @@ ByteArray:
 
 #### The Verification Process
 
+There are two levels of verification, which I call the *Sanity Check* and the *Inductive Proof*:
+- The Sanity Check executes each `Transition` in turn in a Turing Machine, and checks that the resulting machine configuration is accurately described by the associated `TapeDescriptor`. This process is only valid for the specific Cycle, with its specific `RepeaterCount` values; but it is a reassuring first step for anybody planning to write their own Verifier.
+- The Inductive Proof also analyses the `Transitions` and `TapeDescriptors` to verify that they are valid for any values of the `RepeaterCount` array that are at least as large as those in the current Cycle. This lets us conclude that the Cycle will repeat indefinitely.
+
+These two procedures can be performed independently. The program `VerifyBouncers.exe` performs them in parallel, so that it can process the Decider Verification File in a single pass without having to read the Verification Info into memory.
+
 The program `VerifyBouncers.exe` is compiled from:
 - `VerifyBouncers.cpp`, which handles command-line arguments, memory allocation, and file I/O;
 - `BouncerVerifier.cpp`, which contains code used only by the Verifier;
@@ -126,10 +135,10 @@ All functions referenced in the following description can be found in `Bouncer.c
 ##### 1. Initialisation
 Run the machine for `InitialSteps` steps. Check that `InitialLeftmost` and `InitialRightmost` are correct (this is important to distinguish Bouncers from Bells). Check that `InitialTape` accurately describes the machine (state, tape head, and tape) (function `CheckTape`).
 
-##### 2. Per-Transition Verification
+##### 2. Per-Transition Verification (Inductive Proof only)
 For each `RepeaterTransition` and `WallTransition`, verify that executing `nSteps` from the `Initial` segment takes you to the `Final` segment, without leaving the segment boundaries (function `CheckTransition`).
 
-##### 3. Inter-Transition Verification
+##### 3. Inter-Transition Verification (Inductive Proof only)
 We say that `Transition Tr2` *follows on from* `Transition Tr1` if:
  - `Tr2.Initial.State = Tr1.Final.State`
  - After aligning the tapes so that `Tr1.Final.TapeHead` and `Tr2.Initial.TapeHead` are equal, the tapes agree with each other on the overlapping segment. So for instance if `Tr1.Final` is `001[1]01` and `Tr2.Initial` is `1[1]0110`, we align them:
@@ -143,16 +152,16 @@ and check that the overlap is the same (`1[1]01`) in both tapes (function `Check
 
 Now check that for each `RunDescriptor`, `RepeaterTransition` follows on from itself; and `WallTransition` follows on from `RepeaterTransition`. And check that for each `RunDescriptor` except the first, `RepeaterTransition` follows on from `WallTransition` from the previous `RunDescriptor`. And to complete the Cycle, check that the `RepeaterTransition` of the first `RunDescriptor` follows on from the `WallTransition` of the last `RunDescriptor` (function `CheckFollowOn`).
 
-##### 4. TapeDescriptor Verification
+##### 4. TapeDescriptor Verification (Sanity Check only)
 For each `RunDescriptor`, execute its `RepeaterTransition` `RepeaterCount[Partition]` times, and check that `TD0` correctly describes the state of the machine; execute its `WallTransition` once, and check that `TD1` correctly describes the state of the machine (function `CheckTape`).
 
-##### 5. Transition Verification
+##### 5. Transition Verification (Inductive Proof only)
 For each `RunDescriptor`, check that `RepeaterTransition` transforms the previous tape contents into `TD0`; and check that `WallTransition` transforms `TD0` into `TD1`. To avoid disrupting the flow, these steps are described in detail in the following section (**Transition Verification in Detail**).
 
 ##### 6. Complete the Cycle
 `TapeDescriptor TD1` in the last `RunDescriptor` describes the state of the machine after it has executed all the `Transitions` in the Cycle. Now adjust `InitialTape` by appending a single `Repeater` to each `Wall` (i.e. set `InitialTape.Wall[i] += InitialTape.Repeater[i]` for each partition `i`). After doing this, and adjusting the `Leftmost`, `Rightmost`, and `TapeHeadOffset` fields accordingly (functions `ExpandTapeLeftward` and `ExpandTapeRightward`), `InitialTape` should describe exactly the same tape as `TD1` (function `CheckTapesEquivalent`).
 
-This is enough to conclude that the Cycle repeats indefinitely, and the machine is therefore a genuine Bouncer.
+This is enough to conclude that the Cycle repeats indefinitely, and the machine is therefore a genuine Bouncer. (For this conclusion to be valid, it is important to note that the function `CheckTapesEquivalent` checks that two `TapeDescriptors` define the same tape contents for any values of the `RepeaterCount` array that are greater than or equal to the values in the current Cycle.)
 
 #### Transition Verification in Detail
 For each `RunDescriptor`, we have to check that `RepeaterTransition` transforms the previous tape contents into `TD0`; and check that `WallTransition` transforms `TD0` into `TD1`. We describe the procedure for the case that the `Repeater` moves from left to right; the right-to-left case is similar. We start with the simpler case:

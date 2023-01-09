@@ -21,6 +21,7 @@ public:
   static std::string InputFile ;
   static std::string VerificationFile ;
   static std::string UndecidedFile ;
+  static std::string BellsFile ;
   static uint32_t TimeLimit ;     static bool TimeLimitPresent ;
   static uint32_t SpaceLimit ;    static bool SpaceLimitPresent ;
   static uint32_t nThreads ;      static bool nThreadsPresent ;
@@ -36,6 +37,7 @@ std::string CommandLineParams::SeedDatabaseFile ;
 std::string CommandLineParams::InputFile ;
 std::string CommandLineParams::VerificationFile ;
 std::string CommandLineParams::UndecidedFile ;
+std::string CommandLineParams::BellsFile ;
 uint32_t CommandLineParams::TimeLimit ;     bool CommandLineParams::TimeLimitPresent ;
 uint32_t CommandLineParams::SpaceLimit ;    bool CommandLineParams::SpaceLimitPresent ;
 uint32_t CommandLineParams::nThreads ;      bool CommandLineParams::nThreadsPresent ;
@@ -107,10 +109,14 @@ int main (int argc, char** argv)
   FILE* fpBellUmf = 0 ;
   if (CommandLineParams::OutputBells)
     {
-    fpBellTxt = fopen ("ProbableBells.txt", "wt") ;
-    if (fpBellTxt == 0) printf ("Can't open ProbableBells.txt for writing\n"), exit (1) ;
-    fpBellUmf = fopen ("ProbableBells.umf", "wb") ;
-    if (fpBellTxt == 0) printf ("Can't open ProbableBells.umf for writing\n"), exit (1) ;
+    if (CommandLineParams::BellsFile.empty())
+      CommandLineParams::BellsFile = std::string ("ProbableBells") ;
+    fpBellTxt = fopen ((CommandLineParams::BellsFile + ".txt").c_str(), "wt") ;
+    if (fpBellTxt == 0) printf ("Can't open %s.txt for writing\n",
+      CommandLineParams::BellsFile.c_str()), exit (1) ;
+    fpBellUmf = fopen ((CommandLineParams::BellsFile + ".umf").c_str(), "wb") ;
+    if (fpBellTxt == 0) printf ("Can't open %s.umf for writing\n",
+      CommandLineParams::BellsFile.c_str()), exit (1) ;
     }
 
   uint32_t nMachines = InputFileSize >> 2 ;
@@ -406,6 +412,7 @@ void CommandLineParams::Parse (int argc, char** argv)
 
       case 'B':
         OutputBells = true ;
+        if (argv[0][2]) BellsFile = std::string (&argv[0][2]) ;
         break ;
 
       case 'O':
@@ -438,7 +445,7 @@ Bouncers <param> <param>...
            -X<test machine>       Machine to test
            -M<threads>            Number of threads to use
            -L<machine limit>      Max no. of machines to test
-           -B                     Output files ProbableBells.txt and ProbableBells.umf
+           -B[<bells-file>]       Output <bells-file>.txt and <bells-file>.umf (default ProbableBells)
            -O                     Print trace output
 )*RAW*") ;
   exit (status) ;

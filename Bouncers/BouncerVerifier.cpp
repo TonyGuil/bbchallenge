@@ -15,7 +15,7 @@ void BouncerVerifier::Verify (uint32_t SeedDatabaseIndex, const uint8_t* Machine
   nPartitions = Read8u (fp) ;
   if (nPartitions > MAX_PARTITIONS) VERIFY_ERROR() ;
 
-  nRuns = Read8u (fp) ;
+  nRuns = Read16u (fp) ;
   if (nRuns > MAX_RUNS) VERIFY_ERROR() ;
 
   uint32_t InitialSteps = Read32 (fp) ;
@@ -119,7 +119,6 @@ void BouncerVerifier::Verify (uint32_t SeedDatabaseIndex, const uint8_t* Machine
 void BouncerVerifier::ReadRunDescriptor (FILE* fp, RunDescriptor& RD)
   {
   RD.Partition = Read8u (fp) ;
-  RD.RepeaterCount = Read16u (fp) ;
   ReadTransition (fp, RD.RepeaterTransition) ;
   ReadTapeDescriptor (fp, RD.TD0) ;
   ReadTransition (fp, RD.WallTransition) ;

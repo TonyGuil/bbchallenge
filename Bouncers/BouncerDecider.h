@@ -102,6 +102,8 @@ public:
     uint32_t RepeaterCount ;
     int MaxLeftWallExtent ;
     int MinRightWallExtent ;
+    int MinRepeaterExtent ;
+    int MaxRepeaterExtent ;
     } ;
   PartitionData PartitionDataArray[MAX_PARTITIONS] ;
 
