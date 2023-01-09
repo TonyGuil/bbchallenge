@@ -114,7 +114,7 @@ public:
   bool EqualiseRepeaters() ;
   bool MakeRunDescriptors() ;
 
-  struct RunDescriptor
+  struct RunDataTransitions
     {
     uint8_t Partition ;
     int8_t Direction ;
@@ -123,9 +123,9 @@ public:
     Transition WallTransition ;
     } ;
 
-  RunDescriptor RunDescriptorArray[MAX_RUNS] ;
+  RunDataTransitions RunDescriptorArray[MAX_RUNS] ;
 
-  void ConvertRunData (RunDescriptor& To, const RunData& From) ;
+  void ConvertRunData (RunDataTransitions& To, const RunData& From) ;
   bool AnalyseTape_Wall (const TuringMachine* TM, TapeDescriptor& TD, uint32_t CurrentWall,
     const Transition& Tr, int Leftmost, int Rightmost) ;
   bool AnalyseTape_Repeater (const TuringMachine* TM, TapeDescriptor& TD, uint32_t CurrentWall,

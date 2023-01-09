@@ -225,7 +225,7 @@ TryAgain:
         if (Retries >= 3) TM_ERROR() ;
         if (Retries)
           {
-          // After changing RepeaterCount, we must recompute the RunDescriptor
+          // After changing RepeaterCount, we must recompute the RunDataTransitions
           if (!MakeRunDescriptors()) TM_ERROR() ;
           if (!CheckRuns()) TM_ERROR() ;
           GetMaxWallExtents() ;
@@ -833,7 +833,7 @@ bool BouncerDecider::MakeRunDescriptors()
   return true ;
   }
 
-void BouncerDecider::ConvertRunData (RunDescriptor& To, const RunData& From)
+void BouncerDecider::ConvertRunData (RunDataTransitions& To, const RunData& From)
   {
   To.Partition = From.Partition ;
   To.Direction = From.Direction ;
@@ -994,11 +994,11 @@ bool BouncerDecider::CheckRuns()
     C += RD.WallSteps ;
     }
 
-  // Check the RunDescriptor array
+  // Check the RunDataTransitions array
   for (uint32_t i = 0 ; i < nRuns ; i++)
     {
-    RunDescriptor& SD = RunDescriptorArray[i] ;
-    RunDescriptor& NextSD = RunDescriptorArray[(i + 1) % nRuns] ;
+    RunDataTransitions& SD = RunDescriptorArray[i] ;
+    RunDataTransitions& NextSD = RunDescriptorArray[(i + 1) % nRuns] ;
 
     CheckTransition (SD.RepeaterTransition) ;
     CheckTransition (SD.WallTransition) ;

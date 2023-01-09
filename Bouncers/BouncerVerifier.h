@@ -20,7 +20,6 @@ public:
     {
     RunDescriptor (Bouncer* B) : TD0 (B), TD1 (B) { }
     uint32_t Partition ;
-    uint32_t RepeaterCount ;
     Transition RepeaterTransition ;
     TapeDescriptor TD0 ;
     Transition WallTransition ;
