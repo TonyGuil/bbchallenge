@@ -1,0 +1,2 @@
+g++ -Wall -O3 -I"C:/Program Files (x86)/boost_1_72_0" -oVerifyFAR VerifyFAR.cpp FAR_Verifier.cpp
+g++ -Wall -O3 -I"C:/Program Files (x86)/boost_1_72_0" -oDecideFAR DecideFAR.cpp FAR_Decider.cpp FAR_Verifier.cpp ../boost_thread.a
