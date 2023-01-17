@@ -1,6 +1,6 @@
 Decider `DecideFAR.exe` and Verifier `VerifyFAR.exe` for Finite Automata Reduction.
 
-Two dvf formats are supported (format `FAR_FULL_NFA (11)` is obsolete):
+Two dvf formats are supported:
 
 - `DeciderTag = FAR_DFA_ONLY (10)`
 
@@ -10,7 +10,7 @@ Verification Entry format:
   ubyte DFA[DFA_States][2] -- DFA_States is deduced from the VerificationInfo length
 ```
 
-- `DeciderTag = FAR_DFA_NFA (12)`
+- `DeciderTag = FAR_DFA_NFA (11)`
 
 Verification Entry format:
 ```

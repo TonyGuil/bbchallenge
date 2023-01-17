@@ -39,6 +39,10 @@ enum class DeciderTag : uint32_t
   BACKWARD_REASONING      = 4,
   HALTING_SEGMENT         = 5,
   BOUNCER                 = 6,
+
+  // Finite Automata Reduction variants
+  FAR_DFA_ONLY            = 10,
+  FAR_DFA_NFA             = 11,
   } ;
 
 enum class StepResult : uint8_t
@@ -126,13 +130,28 @@ inline int32_t Read8s (FILE* fp)
   }
 
 // inline void Write32 (FILE* fp, uint32_t n)
+// inline void Write16 (FILE* fp, uint32_t n)
+// inline void Write8 (FILE* fp, uint32_t n)
 //
-// Write a big-endian 32-bit integer to a file, reversing the bytes if necessary
+// Write a big-endian integer to a file, reversing the bytes if necessary
 
 inline void Write32 (FILE* fp, uint32_t n)
   {
   boost::endian::native_to_big_inplace (n) ;
   if (fp && fwrite (&n, 4, 1, fp) != 1)
+    printf ("Write error\n"), exit (1) ;
+  }
+
+inline void Write16 (FILE* fp, uint16_t n)
+  {
+  boost::endian::native_to_big_inplace (n) ;
+  if (fp && fwrite (&n, 2, 1, fp) != 1)
+    printf ("Write error\n"), exit (1) ;
+  }
+
+inline void Write8 (FILE* fp, uint8_t n)
+  {
+  if (fp && fwrite (&n, 1, 1, fp) != 1)
     printf ("Write error\n"), exit (1) ;
   }
 
