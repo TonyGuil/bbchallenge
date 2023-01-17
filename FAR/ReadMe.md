@@ -1,6 +1,6 @@
-Decider `DeciderFAR.exe` and Verifier `VerifierFAR.exe` for Finite Automata Reduction.
+Decider `DecideFAR.exe` and Verifier `VerifyFAR.exe` for Finite Automata Reduction.
 
-Two dvf formats are supported:
+Two dvf formats are supported (format `FAR_FULL_NFA (11)` is obsolete):
 
 - `DeciderTag = FAR_DFA_ONLY (10)`
 
@@ -10,7 +10,7 @@ Verification Entry format:
   ubyte DFA[DFA_States][2] -- DFA_States is deduced from the VerificationInfo length
 ```
 
-- `DeciderTag = FAR_DFA_NFA`
+- `DeciderTag = FAR_DFA_NFA (12)`
 
 Verification Entry format:
 ```
@@ -23,7 +23,7 @@ Verification Entry format:
 ```
 where `BoolVector` is a little-endian bitmap of `((NFA_States + 7) >> 3)` bytes.
 
-`DeciderFAR.exe` generates `FAR_DFA_ONLY` data, unless run with `-F`:
+`DecideFAR.exe` generates `FAR_DFA_ONLY` data, unless run with `-F`:
 ```
   DecideFAR <param> <param>...
     <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
@@ -37,7 +37,7 @@ where `BoolVector` is a little-endian bitmap of `((NFA_States + 7) >> 3)` bytes.
              -F                     Output NFA to dvf as well as DFA
              -O                     Print trace output
 ```
-`VerifierFAR.exe` verifies whichever format it finds; if run with `-F`, it also generates the `NFA` from the `DFA` and compares it with the `DFA` from the dvf:
+`VerifyFAR.exe` verifies whichever format it finds; if run with `-F`, it also generates the `NFA` from the `DFA` and compares it with the `DFA` from the dvf:
 ```
   VerifyFAR <param> <param>...
     <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
