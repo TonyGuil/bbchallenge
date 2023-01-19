@@ -158,9 +158,8 @@ inline void Write8 (FILE* fp, uint8_t n)
 class TuringMachine
   {
 public:
-  TuringMachine (uint32_t TimeLimit, uint32_t SpaceLimit)
-  : TimeLimit (TimeLimit)
-  , SpaceLimit (SpaceLimit)
+  TuringMachine (uint32_t SpaceLimit)
+  : SpaceLimit (SpaceLimit)
     {
     memset (TM[0], 0, 2 * sizeof (StateDesc)) ;
     TapeWorkspace = new uint8_t[2 * SpaceLimit + 1] ;
@@ -179,11 +178,10 @@ public:
   int TapeHead ;
   uint8_t State ;
 
-  uint32_t TimeLimit ;
   uint32_t SpaceLimit ;
   int Leftmost ;
   int Rightmost ;
-  uint32_t StepCount ;
+  uint64_t StepCount ;
   int8_t RecordBroken ; // +/-1 if the latest step broke a right or left record
 
   void Initialise (int Index, const uint8_t* MachineSpec)
@@ -206,7 +204,7 @@ public:
 
   TuringMachine& operator= (const TuringMachine& Src)
     {
-    if (TimeLimit != Src.TimeLimit || SpaceLimit != Src.SpaceLimit)
+    if (SpaceLimit != Src.SpaceLimit)
       printf ("Error 1 in TuringMachine::operator=\n"), exit (1) ;
 
     SeedDatabaseIndex = Src.SeedDatabaseIndex ;

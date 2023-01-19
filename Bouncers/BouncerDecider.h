@@ -6,10 +6,11 @@ class BouncerDecider : public Bouncer
   {
 public:
   BouncerDecider (uint32_t TimeLimit, uint32_t SpaceLimit, bool TraceOutput)
-  : Bouncer (TimeLimit, SpaceLimit, TraceOutput)
+  : Bouncer (SpaceLimit, TraceOutput)
+  , TimeLimit (TimeLimit)
   , FinalTape (this)
     {
-    Clone = new TuringMachine (TimeLimit, SpaceLimit) ;
+    Clone = new TuringMachine (SpaceLimit) ;
 
     // Allocate workspace
     RecordLimit = 5000 ; // for now
@@ -35,6 +36,7 @@ public:
   Record* RightRecordList ;
   Record* LatestLeftRecord[NSTATES + 1] ;
   Record* LatestRightRecord[NSTATES + 1] ;
+  uint32_t TimeLimit ;
   uint32_t RecordLimit ;
 
   struct Config

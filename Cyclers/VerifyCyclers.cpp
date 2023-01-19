@@ -41,7 +41,7 @@ std::string CommandLineParams::VerificationFile ;
 class CyclerVerifier : public TuringMachine
   {
 public:
-  CyclerVerifier() : TuringMachine (0, MAX_SPACE)
+  CyclerVerifier() : TuringMachine (MAX_SPACE)
     {
     InitialTape = new uint8_t[2 * MAX_SPACE + 1] ;
     MaxSteps = 0 ;

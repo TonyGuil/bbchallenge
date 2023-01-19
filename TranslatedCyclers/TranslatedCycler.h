@@ -11,9 +11,11 @@ class TranslatedCycler : public TuringMachine
   {
 public:
   TranslatedCycler (uint32_t TimeLimit, uint32_t SpaceLimit, bool TraceOutput)
-  : TuringMachine (TimeLimit, SpaceLimit), TraceOutput (TraceOutput)
+  : TuringMachine (SpaceLimit)
+  , TimeLimit (TimeLimit)
+  , TraceOutput (TraceOutput)
     {
-    Clone = new TuringMachine (TimeLimit, SpaceLimit) ;
+    Clone = new TuringMachine (SpaceLimit) ;
 
     // Allocate workspace
     RecordLimit = 50000 ; // for now
@@ -28,6 +30,8 @@ public:
     const uint8_t* MachineSpecList, uint8_t* VerificationEntryList) ;
 
   bool Run (const uint8_t* MachineSpec, uint8_t* VerificationEntry) ;
+
+  uint32_t TimeLimit ;
 
   struct Record
     {

@@ -46,7 +46,7 @@ uint32_t CommandLineParams::SpaceLimit = 50000 ; // Needed to verify #60054343
 class TranslatedCyclerVerifier : public TuringMachine
   {
 public:
-  TranslatedCyclerVerifier (uint32_t SpaceLimit) : TuringMachine (0, SpaceLimit)
+  TranslatedCyclerVerifier (uint32_t SpaceLimit) : TuringMachine (SpaceLimit)
     {
     MatchContents = new uint8_t[2 * SpaceLimit + 1] ;
     MaxSteps = MaxMatchLength = MaxPeriod = MaxShift = 0 ;

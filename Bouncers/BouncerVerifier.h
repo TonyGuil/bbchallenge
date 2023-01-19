@@ -9,8 +9,8 @@
 class BouncerVerifier : public Bouncer
   {
 public:
-  BouncerVerifier (uint32_t TimeLimit, uint32_t SpaceLimit)
-  : Bouncer (TimeLimit, SpaceLimit, false)
+  BouncerVerifier (uint32_t SpaceLimit)
+  : Bouncer (SpaceLimit, false)
     {
     }
 

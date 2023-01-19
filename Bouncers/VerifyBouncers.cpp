@@ -75,7 +75,7 @@ int main (int argc, char** argv)
   CommandLineParams::Parse (argc, argv) ;
   TuringMachineReader Reader (CommandLineParams::SeedDatabaseFile.c_str()) ;
 
-  BouncerVerifier Verifier (MAX_TIME, CommandLineParams::SpaceLimit) ;
+  BouncerVerifier Verifier (CommandLineParams::SpaceLimit) ;
   Verifier.fp = fopen (CommandLineParams::VerificationFile.c_str(), "rb") ;
   if (Verifier.fp == 0)
     printf ("File \"%s\" not found\n", CommandLineParams::VerificationFile.c_str()), exit (1) ;

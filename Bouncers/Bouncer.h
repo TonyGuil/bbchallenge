@@ -17,8 +17,8 @@
 class Bouncer : public TuringMachine
   {
 public:
-  Bouncer (uint32_t TimeLimit, uint32_t SpaceLimit, bool TraceOutput)
-  : TuringMachine (TimeLimit, SpaceLimit)
+  Bouncer (uint32_t SpaceLimit, bool TraceOutput)
+  : TuringMachine (SpaceLimit)
   , InitialTape (this)
   , TraceOutput (TraceOutput)
     {

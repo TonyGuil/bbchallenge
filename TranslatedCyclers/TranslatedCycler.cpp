@@ -61,7 +61,7 @@ bool TranslatedCycler::Run (const uint8_t* MachineSpec, uint8_t* VerificationEnt
       case StepResult::OK: break ;
       case StepResult::OUT_OF_BOUNDS: return false ;
       case StepResult::HALT:
-        printf ("Unexpected HALT state reached! %d\n", StepCount) ;
+        printf ("Unexpected HALT state reached! %lld\n", StepCount) ;
         printf ("SeedIndex = %d, TapeHead = %d\n", Load32 (MachineSpec - 4), TapeHead) ;
         exit (1) ;
       }

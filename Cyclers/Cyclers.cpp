@@ -37,7 +37,8 @@ class Cycler : public TuringMachine
   {
 public:
   Cycler (uint32_t TimeLimit, uint32_t SpaceLimit)
-  : TuringMachine (TimeLimit, SpaceLimit)
+  : TuringMachine (SpaceLimit)
+  , TimeLimit (TimeLimit)
     {
     HistoryWorkspace = new uint8_t[(2 * SpaceLimit + 1) * TimeLimit] ;
 
@@ -62,6 +63,8 @@ public:
 private:
 
   void Run (uint32_t MachineIndex, const uint8_t* MachineSpec, uint8_t* VerificationEntry) ;
+
+  uint32_t TimeLimit ;
 
   uint8_t* HistoryWorkspace ;
   uint8_t** TapeHistory ;
