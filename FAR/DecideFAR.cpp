@@ -164,7 +164,7 @@ int main (int argc, char** argv)
         Reader.Read (MachineIndexList[i][j], MachineSpecList[i] + j * MACHINE_SPEC_SIZE) ;
         }
 
-      ThreadList[i] = new boost::thread (FiniteAutomataReduction::ThreadFunction, DeciderArray[i],
+      ThreadList[i] = new boost::thread (&FiniteAutomataReduction::ThreadFunction, DeciderArray[i],
         ChunkSizeArray[i], MachineIndexList[i], MachineSpecList[i],
           VerificationEntryList[i], FiniteAutomataReduction::MaxVerifEntryLen * (ChunkSize + 1)) ;
       }

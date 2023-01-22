@@ -192,7 +192,7 @@ int main (int argc, char** argv)
         Reader.Read (MachineIndexList[i][j], MachineSpecList[i] + j * MACHINE_SPEC_SIZE) ;
         }
 
-      ThreadList[i] = new boost::thread (BouncerDecider::ThreadFunction, DeciderArray[i],
+      ThreadList[i] = new boost::thread (&BouncerDecider::ThreadFunction, DeciderArray[i],
         ChunkSizeArray[i], MachineIndexList[i], MachineSpecList[i],
           VerificationEntryList[i], VERIF_AVERAGE_LENGTH * DEFAULT_CHUNK_SIZE) ;
       }

@@ -365,7 +365,7 @@ int main (int argc, char** argv)
         }
 
       ThreadList[i] = new boost::thread (ThreadAttributes, boost::bind (
-        HaltingSegment::ThreadFunction, DeciderArray[i], ChunkSizeArray[i],
+        &HaltingSegment::ThreadFunction, DeciderArray[i], ChunkSizeArray[i],
         MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i])) ;
       }
 
