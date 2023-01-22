@@ -10,8 +10,8 @@ bool FiniteAutomataReduction::RunDecider (uint32_t DFA_States,
   NFA_States = 5 * DFA_States + 1 ;
   HALT_State = NFA_States - 1 ;
 
-  Matrix RStack[MaxDFA_States + 1][2] ;
-  Vector aStack[MaxDFA_States + 1] ;
+  Matrix RStack[2 * MaxDFA_States + 1][2] ;
+  Vector aStack[2 * MaxDFA_States + 1] ;
 
   for (uint32_t i = 0 ; i <= DFA_States ; i++)
     {
@@ -46,7 +46,7 @@ bool FiniteAutomataReduction::RunDecider (uint32_t DFA_States,
     uint32_t k = 1 ;
     uint8_t* t = DFA[0] ;
     memset (t, 0, 2 * DFA_States) ;
-    uint8_t m[MaxDFA_States] ;
+    uint8_t m[2 * MaxDFA_States] ;
     memset (m, 0, 2 * DFA_States) ;
     for ( ; ; )
       {
