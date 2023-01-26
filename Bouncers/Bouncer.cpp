@@ -341,9 +341,12 @@ void Bouncer::ExpandWallsLeftward (TapeDescriptor& TD0, TapeDescriptor& TD1, uin
   DeltaCount /= TD0.Repeater[Wall - 1].size() ;
   Amount = DeltaCount * TD0.Repeater[Wall - 1].size() ;
 
-  // We expect the resulting RepeaterCount to be at least 3 (not strictly
-  // necessary, but it covers all known cases and avoids unpleasant shocks)
-  if ((int)TD0.RepeaterCount[Wall - 1] < DeltaCount + 3) TM_ERROR() ;
+  if (TD0.RepeaterCount[Wall - 1] != TD1.RepeaterCount[Wall - 1] ||
+    TD0.Repeater[Wall - 1].size() != TD1.Repeater[Wall - 1].size())
+      TM_ERROR() ;
+
+  // Check that we are not encroaching on the neighbouring wall
+  if ((int)TD0.RepeaterCount[Wall - 1] < DeltaCount) TM_ERROR() ;
 
   TD0.RepeaterCount[Wall - 1] -= DeltaCount ;
   TD1.RepeaterCount[Wall - 1] -= DeltaCount ;
@@ -373,9 +376,12 @@ void Bouncer::ExpandWallsRightward (TapeDescriptor& TD0, TapeDescriptor& TD1, ui
   int DeltaCount = Amount + TD0.Repeater[Wall].size() - 1 ;
   DeltaCount /= TD0.Repeater[Wall].size() ;
 
-  // We expect the resulting RepeaterCount to be at least 3 (not strictly
-  // necessary, but it covers all known cases and avoids unpleasant shocks)
-  if ((int)TD0.RepeaterCount[Wall] < DeltaCount + 3) TM_ERROR() ;
+  if (TD0.RepeaterCount[Wall] != TD1.RepeaterCount[Wall] ||
+    TD0.Repeater[Wall].size() != TD1.Repeater[Wall].size())
+      TM_ERROR() ;
+
+  // Check that we are not encroaching on the neighbouring wall
+  if ((int)TD0.RepeaterCount[Wall] < DeltaCount) TM_ERROR() ;
 
   TD0.RepeaterCount[Wall] -= DeltaCount ;
   TD1.RepeaterCount[Wall] -= DeltaCount ;
@@ -464,10 +470,11 @@ void Bouncer::CheckTapesEquivalent (const TapeDescriptor& TD0, const TapeDescrip
     {
     if (TD0.RepeaterCount[i] != TD1.RepeaterCount[i]) TM_ERROR() ;
     if (TD0.Repeater[i].size() != TD1.Repeater[i].size()) TM_ERROR() ;
+    if (TD0.RepeaterCount[i] < 1 || TD0.Repeater[i].size() == 0) TM_ERROR() ;
     }
 
   // Check that the repeater segments overlap by at least the length of one
-  // repeater(this ensures that we can insert more repeaters into the segment
+  // repeater (this ensures that we can insert more repeaters into the segment
   // and the two descriptors will still be equivalent)
   int TapeHead0 = TD0.Leftmost ;
   int TapeHead1 = TD1.Leftmost ;

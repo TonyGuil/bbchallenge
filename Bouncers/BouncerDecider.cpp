@@ -763,13 +763,13 @@ void BouncerDecider::GetMaxWallExtents()
   switch (TB_Direction)
     {
     case 1:
-      PartitionDataArray[0].MinRepeaterExtent = TB_Outermost ;
+      PartitionDataArray[0].MinRepeaterExtent = TB_Outermost + TB_Wall.size() ;
       PartitionDataArray[0].MaxRepeaterExtent = PartitionDataArray[1].MaxLeftWallExtent ;
       break ;
 
     case -1:
       PartitionDataArray[nPartitions - 1].MinRepeaterExtent =  PartitionDataArray[nPartitions - 2].MinRightWallExtent ;
-      PartitionDataArray[nPartitions - 1].MaxRepeaterExtent = TB_Outermost ;
+      PartitionDataArray[nPartitions - 1].MaxRepeaterExtent = TB_Outermost - TB_Wall.size() ;
       break ;
     }
   }
