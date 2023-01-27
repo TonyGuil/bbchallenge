@@ -178,6 +178,7 @@ int main (int argc, char** argv)
       {
       LastPercent = Percent ;
       printf ("\r%d%% %d %d", Percent, nCompleted, nDecided) ;
+      fflush (stdout) ;
       }
     }
 
@@ -193,6 +194,7 @@ int main (int argc, char** argv)
   // The space-limited machines are not expected to yield any Cyclers,
   // so we just copy these to the umf
   printf ("Copying space-limited machines...") ;
+  fflush (stdout) ;
   for (uint32_t i = Reader.nTimeLimited ; i < Reader.nMachines ; i++)
     Write32 (fpUndecided, i) ;
   printf ("Done\n") ;

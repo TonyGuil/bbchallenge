@@ -86,6 +86,7 @@ int main (int argc, char** argv)
     if (Percent != LastPercent)
       {
       printf ("\r%d%%", Percent) ;
+      fflush (stdout) ;
       LastPercent = Percent ;
       }
 
