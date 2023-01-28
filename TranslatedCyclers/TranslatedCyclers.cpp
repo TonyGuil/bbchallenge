@@ -238,6 +238,7 @@ int main (int argc, char** argv)
       {
       LastPercent = Percent ;
       printf ("\r%d%% %d %d", Percent, nCompleted, nDecided) ;
+      fflush (stdout) ;
       }
     }
   printf ("\n") ;
