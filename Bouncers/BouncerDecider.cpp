@@ -1164,7 +1164,7 @@ bool BouncerDecider::AnalyseTape_Wall (const TuringMachine* TM, TapeDescriptor& 
       return false ;
       }
 
-    uint32_t WallLen = WallRightmost[Partition] - WallLeftmost[Partition] + 1 ;
+    int WallLen = WallRightmost[Partition] - WallLeftmost[Partition] + 1 ;
     TD.Wall[Partition].resize (WallLen) ;
     memcpy (&TD.Wall[Partition][0], &TM -> Tape[WallLeftmost[Partition]], WallLen) ;
 
@@ -1328,7 +1328,7 @@ bool BouncerDecider::AnalyseTape_Repeater (const TuringMachine* TM, TapeDescript
       return false ;
       }
 
-    uint32_t WallLen = WallRightmost[Partition] - WallLeftmost[Partition] + 1 ;
+    int WallLen = WallRightmost[Partition] - WallLeftmost[Partition] + 1 ;
     TD.Wall[Partition].resize (WallLen) ;
     memcpy (&TD.Wall[Partition][0], &TM -> Tape[WallLeftmost[Partition]], WallLen) ;
 
@@ -1500,10 +1500,10 @@ void BouncerDecider::MakeTranslatedBouncerData()
     // We expect a repeater sequence starting from Cycle1Leftmost and moving left
     TB_Size = Cycle1Leftmost - Leftmost ;
     TB_Outermost = Leftmost ;
-    uint32_t Shift = Cycle2Leftmost - Cycle1Leftmost ;
+    int Shift = Cycle2Leftmost - Cycle1Leftmost ;
     TB_Repeater = std::vector<uint8_t> (Shift) ;
     memcpy (&TB_Repeater[0], Tape + Cycle1Leftmost - Shift, Shift) ;
-    uint32_t RepeaterLen ;
+    int RepeaterLen ;
     for (RepeaterLen = Shift + 1 ; (int)RepeaterLen <= Cycle1Leftmost - Leftmost ; RepeaterLen++)
       if (Tape[Cycle1Leftmost - RepeaterLen] != Tape[Cycle1Leftmost - RepeaterLen + Shift])
         break ;
@@ -1522,10 +1522,10 @@ void BouncerDecider::MakeTranslatedBouncerData()
     // We expect a repeater sequence starting from Cycle1Rightmost and moving right
     TB_Size = Rightmost - Cycle1Rightmost ;
     TB_Outermost = Rightmost ;
-    uint32_t Shift = Cycle1Rightmost - Cycle2Rightmost ;
+    int Shift = Cycle1Rightmost - Cycle2Rightmost ;
     TB_Repeater = std::vector<uint8_t> (Shift) ;
     memcpy (&TB_Repeater[0], Tape + Cycle1Rightmost + 1, Shift) ;
-    uint32_t RepeaterLen ;
+    int RepeaterLen ;
     for (RepeaterLen = Shift + 1 ; (int)RepeaterLen <= Rightmost - Cycle1Rightmost ; RepeaterLen++)
       if (Tape[Cycle1Rightmost + RepeaterLen] != Tape[Cycle1Rightmost + RepeaterLen - Shift])
         break ;
