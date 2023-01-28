@@ -218,7 +218,7 @@ void FiniteAutomataReduction::ReconstructNFA (const uint8_t* MachineSpec)
 void FiniteAutomataReduction::DumpDFA()
   {
   for (uint32_t i = 0 ; i < DFA_States ; i++)
-    printf ("(%d %d) ", DFA[i][0], DFA[0][1]) ;
+    printf ("(%d %d) ", DFA[i][0], DFA[i][1]) ;
   printf ("\n") ;
   }
 

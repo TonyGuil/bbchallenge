@@ -195,6 +195,11 @@ public:
       S -> Next = *MachineSpec++ ;
       }
 
+    Reset() ;
+    }
+
+  void Reset()
+    {
     memset (Tape - SpaceLimit + 1, 0, 2 * SpaceLimit - 1) ;
     TapeHead = Leftmost = Rightmost = 0 ;
     State = 1 ;
