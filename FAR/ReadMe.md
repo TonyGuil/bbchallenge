@@ -37,7 +37,7 @@ where `BoolVector` is a little-endian bitmap of `((NFA_States + 7) >> 3)` bytes.
              -F                     Output NFA to dvf as well as DFA
              -O                     Print trace output
 ```
-`VerifyFAR.exe` verifies whichever format it finds; if run with `-F`, it also generates the `NFA` from the `DFA` and compares it with the `DFA` from the dvf:
+`VerifyFAR.exe` verifies whichever format it finds; if run with `-F`, it also generates the `NFA` from the `DFA` and compares it with the `NFA` from the dvf:
 ```
   VerifyFAR <param> <param>...
     <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
