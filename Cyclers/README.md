@@ -4,7 +4,7 @@ To generate umf and dvf files, run Run.bat.
 This Decider takes the 88,664,064 machines from the seed database and classifies 11,229,238 machines as non-halting. Time: 64s.
 
 The Verifier verifies these 11,229,238 machines in a time of 109s.
-
+```
 Format of Cyclers Verification File
 -----------------------------------
   uint nEntries
@@ -20,3 +20,4 @@ Format of Cyclers Verification File
     int TapeHead          -- Tape head of machine in initial and final configurations
     uint InitialStepCount -- Number of steps to reach initial configuration
     uint FinalStepCount   -- Number of steps to reach final configuration
+```
