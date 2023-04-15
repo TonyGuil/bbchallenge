@@ -24,6 +24,7 @@ All Deciders share a uniform command-line syntax, plus possible additional param
 
 Summary
 -------
+```
 -N<states>            Machine states (2, 3, 4, 5, or 6)
 -M<machine spec>      Compact machine code (ASCII spec) to test
 -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
@@ -34,10 +35,11 @@ Summary
 -U<undecided file>    Output file: remaining undecided machines
 -H<threads>           Number of threads to use
 -O                    Print trace output
+```
 
 Machine States
 --------------
--N<states>
+```-N<states>```
 Number of Turing Machine states -- an integer between 2 and 6 inclusive. The default is 5.
 
 Machines to be Tested
