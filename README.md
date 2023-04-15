@@ -39,73 +39,102 @@ Summary
 
 Machine States
 --------------
-```-N<states>```
+```
+-N<states>
+```
 Number of Turing Machine states -- an integer between 2 and 6 inclusive. The default is 5.
 
 Machines to be Tested
 ---------------------
 There are various options for specifying the set of machines to be tested. To specify a single machine with a given specification:
+```
 -M<machine spec>
-<machine spec> is compact machine code in ASCII. For instance:
+```
+`<machine spec>` is compact machine code in ASCII. For instance:
+```
 -M1RB1LE_1LC---_0RE1LD_0LB0RA_1LC0RF_1RE1RF
+```
 
 Otherwise a seed database file is required. This can be specified with:
+```
 -D<database>
+```
 If unspecified, it defaults to ../SeedDatabase.bin.
 
 If nstates is equal to 5, the seed database fle is assumed to consist of a 30-byte header followed by 30 binary bytes for each machine, as in the original seed database file from bbchallenge.org. Otherwise it consists of a list of compact machine code specs in ASCII format, with each line containing a compact spec. Lines must be separated by a single delimiter byte (which can take any value).
 
 If an input file is specified with
+```
 -I<input file>
+```
 then the file contains a list of 4-byte big-endian integers in binary format; each index is the 0-based index of a machine in the seed database file. If no input file is specified, then all the machines in the seed database file are tested.
 
 To specify a single machine for testing:
--X<test machine>
+```-X<test machine>
+```
 Again, <test machine> is the 0-based index of a machine in the seed database file.
 
 To limit the total number of of machines tested:
+```
 -L<machine limit>
+```
 
 Output Files
 ------------
 To generate a Decider Verification File, or dvf:
+```
 -V<verification file>
+```
 This file contains a Verification Entry for each machine successfully decided as non-halting. The format of this file is described below.
 
 To generate a list of machines that the Decider failed to categorise as non-halting (the Undecided Machines File, or umf):
+```
 -U<undecided file>
+```
 This file has the same format as the input file, so it can be used to chain Deciders by specifying the output of one as the input file of the next.
 
 Miscellaneous
 -------------
 The Deciders will normally use as many threads as are available on the computer. To override this:
+```
 -H<threads>
+```
 
 To generate diagnostic output (this output changes constantly during development, but is now largely non-existent):
+```
 -O
+```
 
 Verifier Parameters
 ===================
 Summary
 -------
+```
 -N<states>            Machine states (2, 3, 4, 5, or 6)
 -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
 -V<verification file> Output file: verification data for decided machines
+```
 
 Machine States
 --------------
+```
 -N<states>
+```
 Number of Turing Machine states -- an integer between 2 and 6 inclusive. The default is 5.
 
 Seed database
 -------------
 To specify a seed database file:
+```
 -D<database>
+```
 If absent, it defaults to ../SeedDatabase.bin.
 
 Verification File
 -----------------
+```
 -V<verification file>
+```
 This file contains a Verification Entry for each machine that has been categorised as non-halting.
 
 File Formats
@@ -114,7 +143,7 @@ Unless otherwise noted, all fields are 32-bit big-endian integers, signed (int) 
 
 Format of Undecided Machine File
 --------------------------------
-  The seed dabatase index of each undecided file, in increasing order
+The seed dabatase index of each undecided file, in increasing order
 
 Format of Decider Verification File
 -----------------------------------
