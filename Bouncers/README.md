@@ -1,6 +1,6 @@
 This is a Decider and Verifier for Bouncers.
 
-To compile with g++ 12.2.0, run Compile.bat.
+To compile with g++ 12.2.0, run Compile.bat.<br>
 To generate umf and dvf files, run Run.bat.
 
 With parameters -T1000000 -S20000 -B, this Decider takes the 1,538,548 undecided machines from the Translate Cyclers Decider and classifies 1,406,010 machines as non-halting, leaving 132,538 undecided machines. Time (limited to 4 threads): 3.6 hours.
@@ -11,7 +11,7 @@ The files ProbableBells.txt and ProbableBells.umf are text and binary dumps of t
 
 Decider
 -------
-DecideBouncers  <param> <param>...
+```DecideBouncers  <param> <param>...
   <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
            -V<verification file> Output file: verification data for decided machines
@@ -25,15 +25,16 @@ DecideBouncers  <param> <param>...
            -T<time limit>        Max no. of steps
            -S<space limit>       Max absolute value of tape head
            -B[<bells-file>]      Output <bells-file>.txt and <bells-file>.umf (default ProbableBells)
-
+```
 Verifier
 --------
+```
 VerifyBouncers <param> <param>...
   <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
            -V<verification file> Input file: verification data to be checked
            -S<space limit>       Max absolute value of tape head
-
+```
 #### Introduction
 
 A Bouncer of the simplest kind is a machine that bounces back and forth between two walls, which move further and further apart. These simple Bouncers can be categorised as:

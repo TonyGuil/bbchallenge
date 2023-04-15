@@ -1,4 +1,4 @@
-To compile with g++ 12.2.0, run Compile.bat.
+To compile with g++ 12.2.0, run Compile.bat.<br>
 To generate umf and dvf files, run Run.bat.
 
 With parameter -A7, this Decider takes the 85,957 undecided machines from the Halting Segments Decider and classifies 84,370 machines as non-halting, leaving 1,587 undecided machines. Time (limited to 4 threads): 5.5 hours.
@@ -7,6 +7,7 @@ The Verifier verifies these 1,587 machines in a time of 5s.
 
 Decider
 -------
+```
 DecideFAR <param> <param>...
   <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
@@ -20,14 +21,16 @@ DecideFAR <param> <param>...
            -O                    Print trace output
            -A<DFA states>        Number of DFA states
            -F                    Output NFA to dvf as well as DFA
+```
 Verifier
 --------
+```
 VerifyFAR <param> <param>...
   <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
            -V<verification file> Input file: verification data to be checked
            -F                    Reconstruct NFA and check it against NFA in dvf
-
+```
 Two dvf formats are supported:
 
 - `DeciderTag = FAR_DFA_ONLY (10)`

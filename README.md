@@ -107,8 +107,7 @@ If absent, it defaults to ../SeedDatabase.bin.
 
 Verification File
 -----------------
-`-V<verification file>`
-
+`-V<verification file>`<br>
 This file contains a Verification Entry for each machine that has been categorised as non-halting.
 
 File Formats

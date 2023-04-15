@@ -5,6 +5,7 @@ With parameters -T1000 -S200, this Decider takes the 77,434,826 undecided machin
 
 Decider
 -------
+```
 BackwardReasoning <param> <param>...
   <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
@@ -17,6 +18,7 @@ BackwardReasoning <param> <param>...
            -H<threads>           Number of threads to use
            -O                    Print trace output
            -S<depth limit>        Max search depth
+```
 
 Verifier
 --------
@@ -24,6 +26,7 @@ No Verifier is provided.
 
 Verification File Format
 ------------------------
+```
   uint nEntries
   VerificationEntry[nEntries]
 
@@ -35,7 +38,5 @@ Verification File Format
     int Rightmost          -- Rightmost tape head position
     uint MaxDepth
     uint nNodes
-
-
+```
 Unfortunately the BackwardReasoning machines are not amenable to verification in the same way as Cyclers and TranslatedCyclers. So acceptance is difficult to justify, as there seems to be no better method than simply analysing the source code for bugs...
-

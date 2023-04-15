@@ -1,4 +1,4 @@
-To compile with g++ 12.2.0, run Compile.bat.
+To compile with g++ 12.2.0, run Compile.bat.<br>
 To generate umf and dvf files, run Run.bat.
 
 With parameters -T1000 -S200, this Decider takes the 88,664,064 machines from the seed database and classifies 11,229,238 machines as non-halting, leaving 77,434,826 undecided machines. Time: 70s.
@@ -7,6 +7,7 @@ The Verifier verifies these 11,229,238 machines in a time of 52s.
 
 Decider
 -------
+```
 DecideCyclers <param> <param>...
   <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
@@ -20,14 +21,15 @@ DecideCyclers <param> <param>...
            -O                    Print trace output
            -T<time limit>        Max no. of steps
            -S<space limit>       Max absolute value of tape head)*RAW*") ;
-
+```
 Verifier
 --------
+```
 VerifyCyclers <param> <param>...
   <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
            -V<verification file> Input file: verification data to be checked
-
+```
 Format of Cyclers Verification File
 -----------------------------------
 ```

@@ -1,4 +1,4 @@
-To compile with g++ 12.2.0, run Compile.bat.
+To compile with g++ 12.2.0, run Compile.bat.<br>
 To generate umf and dvf files, run Run.bat.
 
 With parameters -T20000000 -S100000, this Decider takes the 40,344,103 undecided machines from the Backward Reasoning Decider and classifies 38,805,555 machines as non-halting, leaving 1,538,548 undecided machines. Time (limited to 4 threads): 6 hours.
@@ -7,6 +7,7 @@ The Verifier verifies these 38,805,555 machines in a time of 249s.
 
 Decider
 -------
+```
 DecideTranslatedCyclers <param> <param>...
   <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
@@ -20,14 +21,15 @@ DecideTranslatedCyclers <param> <param>...
            -O                    Print trace output
            -T<time limit>        Max no. of steps
            -S<space limit>       Max absolute value of tape head
-
+```
 Verifier
 --------
+```
 VerifyTranslatedCyclers <param> <param>...
   <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
            -V<verification file>  Input file: verification data to be checked
            -S<space limit>        Max absolute value of tape head
-
+```
 Format of Verification File
 ---------------------------
 An initial configuration matches a final configuration translated left or right.
