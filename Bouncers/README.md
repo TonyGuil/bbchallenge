@@ -12,7 +12,7 @@ The files ProbableBells.txt and ProbableBells.umf are text and binary dumps of t
 Decider
 -------
 DecideBouncers  <param> <param>...
-  <param>: -N<states>            Machine states (5 or 6)
+  <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
            -V<verification file> Output file: verification data for decided machines
            -I<input file>        Input file: list of machines to be analysed (default=all machines)
@@ -29,7 +29,7 @@ DecideBouncers  <param> <param>...
 Verifier
 --------
 VerifyBouncers <param> <param>...
-  <param>: -N<states>            Machine states (5 or 6)
+  <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
            -V<verification file> Input file: verification data to be checked
            -S<space limit>       Max absolute value of tape head

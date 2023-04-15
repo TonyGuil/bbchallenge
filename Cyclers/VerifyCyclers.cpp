@@ -1,5 +1,5 @@
 // VerifyCyclers <param> <param>...
-//   <param>: -N<states>            Machine states (5 or 6)
+//   <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
 //            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
 //            -V<verification file> Input file: verification data to be checked
 //

@@ -8,7 +8,7 @@ The Verifier verifies these 1,587 machines in a time of 5s.
 Decider
 -------
 DecideFAR <param> <param>...
-  <param>: -N<states>            Machine states (5 or 6)
+  <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
            -V<verification file> Output file: verification data for decided machines
            -I<input file>        Input file: list of machines to be analysed (default=all machines)
@@ -23,7 +23,7 @@ DecideFAR <param> <param>...
 Verifier
 --------
 VerifyFAR <param> <param>...
-  <param>: -N<states>            Machine states (5 or 6)
+  <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
            -V<verification file> Input file: verification data to be checked
            -F                    Reconstruct NFA and check it against NFA in dvf
