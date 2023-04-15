@@ -69,15 +69,13 @@ If an input file is specified with
 ```
 then the file contains a list of 4-byte big-endian integers in binary format; each index is the 0-based index of a machine in the seed database file. If no input file is specified, then all the machines in the seed database file are tested.
 
-To specify a single machine for testing:
-```-X<test machine>
-```
+To specify a single machine for testing:<br>
+`-X<test machine>`
+
 Again, <test machine> is the 0-based index of a machine in the seed database file.
 
 To limit the total number of of machines tested:
-```
--L<machine limit>
-```
+`-L<machine limit>`
 
 Output Files
 ------------
