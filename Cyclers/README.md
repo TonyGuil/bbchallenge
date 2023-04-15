@@ -8,7 +8,7 @@ The Verifier verifies these 11,229,238 machines in a time of 52s.
 Decider
 -------
 DecideCyclers <param> <param>...
-  <param>: -N<states>            Machine states (5 or 6)
+  <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
            -V<verification file> Output file: verification data for decided machines
            -I<input file>        Input file: list of machines to be analysed (default=all machines)
@@ -30,6 +30,7 @@ VerifyCyclers <param> <param>...
 
 Format of Cyclers Verification File
 -----------------------------------
+```
   uint nEntries
   VerificationEntry[nEntries]
 
@@ -43,3 +44,4 @@ Format of Cyclers Verification File
     int TapeHead          -- Tape head of machine in initial and final configurations
     uint InitialStepCount -- Number of steps to reach initial configuration
     uint FinalStepCount   -- Number of steps to reach final configuration
+```
