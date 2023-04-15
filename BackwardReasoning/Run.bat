@@ -1,1 +1,1 @@
-BackwardReasoning -D50 -I../TranslatedCyclers/TranslatedCyclers.umf -UBackwardReasoning.umf -VBackwardReasoning.dvf
+BackwardReasoning -S75 -I../Cyclers/Cyclers.umf -UBackwardReasoning.umf -VBackwardReasoning.dvf

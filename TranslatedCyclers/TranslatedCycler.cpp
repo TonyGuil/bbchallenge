@@ -1,21 +1,3 @@
-// TranslatedCyclers.cpp
-//
-// Decider for TranslatedCyclers
-//
-// To run:
-//   TranslatedCyclers <param> <param>...
-//     <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
-//              -I<input file>         Input file: list of machines to be analysed (umf)
-//              -V<verification file>  Output file: verification data for decided machines (dvf)
-//              -U<undecided file>     Output file: remaining undecided machines (umf)
-//              -T<time limit>         Max no. of steps
-//              -S<space limit>        Max absolute value of tape head
-//              -W<workspace size>     Tape history workspace
-//              -M<threads>            Number of threads to use
-//
-// Parameters -I, -V, -U, and -T are compulsory. Other parameters were mainly for tuning
-// during development, and can be omitted.
-//
 // Format of Decider Verification File (32-bit big-endian integers, signed or unsigned):
 //
 // DeciderSpecificInfo format:
@@ -60,10 +42,7 @@ bool TranslatedCycler::Run (const uint8_t* MachineSpec, uint8_t* VerificationEnt
       {
       case StepResult::OK: break ;
       case StepResult::OUT_OF_BOUNDS: return false ;
-      case StepResult::HALT:
-        printf ("Unexpected HALT state reached! %llu\n", (unsigned long long) StepCount) ;
-        printf ("SeedIndex = %d, TapeHead = %d\n", Load32 (MachineSpec - 4), TapeHead) ;
-        exit (1) ;
+      case StepResult::HALT: return false ; // The BouncerDecider knows what to do with these
       }
 
     if (RecordBroken == 1)
@@ -101,7 +80,7 @@ bool TranslatedCycler::Run (const uint8_t* MachineSpec, uint8_t* VerificationEnt
 
 bool TranslatedCycler::DetectRepetition (Record* LatestRecord[], uint8_t State, uint8_t* VerificationEntry)
   {
-  #define BACKWARD_SCAN_LENGTH 5000
+  #define BACKWARD_SCAN_LENGTH 10000
   Record* Workspace[3 * BACKWARD_SCAN_LENGTH] ;
   Record* Latest = LatestRecord[State] ;
 
@@ -179,12 +158,6 @@ bool TranslatedCycler::DetectRepetition (Record* LatestRecord[], uint8_t State, 
       Save32 (VerificationEntry + 32, StepCount) ;
       Save32 (VerificationEntry + 36, StepCount + CycleSteps) ;
       Save32 (VerificationEntry + 40, nCells) ;
-      }
-
-    if (i > MaxStat)
-      {
-      MaxStat = i ;
-      MaxStatMachine = SeedDatabaseIndex ;
       }
 
     return true ;

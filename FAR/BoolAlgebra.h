@@ -9,22 +9,31 @@
 #include <string.h>
 #include <stdint.h>
 
+#if UINTPTR_MAX > 0xFFFFFFFF // If pointers are 64-bit
+  // 64-bit bitmaps
+  #define BITS_IN_WORD 64
+  #define BIT_MASK     63
+  #define BIT_SHIFT    6
+  #define ONE          1LL
+  typedef uint64_t bitmap_t ;
+#else
+  // 32-bit bitmaps
+  #define BITS_IN_WORD 32
+  #define BIT_MASK     31
+  #define BIT_SHIFT    5
+  #define ONE          1
+  typedef uint32_t bitmap_t ;
+#endif
+
 #define BOOL_ALGEBRA_ERROR() \
   printf ("\nBoolAlgebra error at line %d in %s\n", \
   __LINE__, __FUNCTION__), exit (1)
-
-// BoolVector class: a boolean vector
-//
-// To keep things simple and fast, every BoolVector contains a 16-byte array,
-// stored as four 32-bit words
-
-struct BoolAlgebraException { } ;
 
 template <int MaxBits> class BoolVector
   {
 public:
   static const int MaxBytes = (MaxBits + 7) >> 3 ;
-  static const int MaxWords = (MaxBits + 31) >> 5 ;
+  static const int MaxWords = (MaxBits + BIT_MASK) >> BIT_SHIFT ;
 
   explicit BoolVector (uint32_t BitWidth = 0)
     {
@@ -32,6 +41,7 @@ public:
     }
   BoolVector (const BoolVector& v) : BoolVector (v.BitWidth)
     {
+if (MaxWords > 1) BOOL_ALGEBRA_ERROR() ;
     memcpy (d, v.d, sizeof (d)) ;
     }
   void SetBitWidth (uint32_t BitWidth)
@@ -39,7 +49,7 @@ public:
     if (BitWidth > MaxBits) BOOL_ALGEBRA_ERROR() ;
     this -> BitWidth = BitWidth ;
     nBytes = (BitWidth + 7) >> 3 ;
-    nWords = (BitWidth + 31) >> 5 ;
+    nWords = (BitWidth + BIT_MASK) >> BIT_SHIFT ;
     memset (d, 0, sizeof (d)) ;
     }
 
@@ -50,11 +60,9 @@ public:
     {
     if (bitnum >= BitWidth) BOOL_ALGEBRA_ERROR() ;
     bool Prev = BitSet (bitnum) ;
-    d[bitnum >> 5] |= 1 << (bitnum & 31) ;
+    d[bitnum >> BIT_SHIFT] |= ONE << (bitnum & BIT_MASK) ;
     return Prev ;
     }
-  uint32_t BitCount() const ;
-  uint32_t SingleBit() const ;
   bool IsZero() const { return !memcmp (d, Zero,sizeof (d)) ; }
 
   BoolVector& operator= (const BoolVector& v) ;
@@ -81,23 +89,23 @@ public:
   static void Multiply (BoolVector* U, const BoolVector* V, const BoolVector* W) ;
   static bool GreaterOrEqual (const BoolVector* U, const BoolVector* V) ;
 
-  uint32_t d[MaxWords] ;
+  bitmap_t d[MaxWords] ;
 
   uint16_t BitWidth ;
   uint16_t nBytes ;
   uint16_t nWords ;
 
 private:
-  static uint32_t Zero[MaxWords] ;
+  static bitmap_t Zero[MaxWords] ;
   } ;
 
-template<int MaxBits> uint32_t BoolVector<MaxBits>::Zero[MaxWords] ;
+template<int MaxBits> bitmap_t BoolVector<MaxBits>::Zero[MaxWords] ;
 
 template <int MaxBits> class BoolMatrix
   {
 public:
   static const int MaxBytes = (MaxBits + 7) >> 3 ;
-  static const int MaxWords = (MaxBits + 31) >> 5 ;
+  static const int MaxWords = (MaxBits + BIT_MASK) >> BIT_SHIFT ;
 
   explicit BoolMatrix (uint32_t BitWidth = 0)
     {
@@ -172,7 +180,7 @@ template<int MaxBits> void BoolVector<MaxBits>::Write (FILE* fp)
 template<int MaxBits> bool BoolVector<MaxBits>::BitSet (uint32_t n) const 
   {
   if (n >= BitWidth) BOOL_ALGEBRA_ERROR() ;
-  return (d[n >> 5] & (1 << (n & 31))) != 0 ;
+  return (d[n >> BIT_SHIFT] & (ONE << (n & BIT_MASK))) != 0 ;
   }
 
 template<int MaxBits> BoolVector<MaxBits>& BoolVector<MaxBits>::operator= (const BoolVector<MaxBits>& v)
@@ -189,30 +197,6 @@ template<int MaxBits> BoolVector<MaxBits>& BoolVector<MaxBits>::operator+= (cons
   for (uint32_t i = 0 ; i < nWords ; i++)
     d[i] |= v.d[i] ;
   return *this ;
-  }
-
-template<int MaxBits> uint32_t BoolVector<MaxBits>::BitCount() const
-  {
-  uint32_t Count = 0 ;
-  for (uint32_t i = 0 ; i < nWords ; i++)
-    Count += __builtin_popcount (d[i]) ;
-  return Count ;
-  }
-
-template<int MaxBits> uint32_t BoolVector<MaxBits>::SingleBit() const
-  {
-  uint32_t Bit = 0 ;
-  bool Found = false ;
-  for (uint32_t i = 0 ; i < BitWidth ; i++)
-    if (BitSet (i))
-      {
-      if (Found) printf ("Error 1 in BoolVector<MaxBits>::SingleBit\n"), exit (1) ;
-      Bit = i ;
-      Found = true ;
-      }
-  if (!Found) printf ("Error 1 in BoolVector<MaxBits>::SingleBit\n"), exit (1) ;
-
-  return Bit ;
   }
 
 template<int MaxBits> BoolVector<MaxBits>& BoolVector<MaxBits>::operator-= (const BoolVector<MaxBits>& v)
@@ -281,14 +265,14 @@ template<int MaxBits> BoolVector<MaxBits> operator* (const BoolMatrix<MaxBits>& 
   return result ;
   }
 
-template<int MaxBits> void BoolMatrix<MaxBits>:: Read (FILE* fp, uint32_t BitWidth)
+template<int MaxBits> void BoolMatrix<MaxBits>::Read (FILE* fp, uint32_t BitWidth)
   {
   SetBitWidth (BitWidth) ;
   for (uint32_t i = 0 ; i < BitWidth ; i++)
     A[i].Read (fp, BitWidth) ;
   }
 
-template<int MaxBits> void BoolMatrix<MaxBits>:: Write (FILE* fp)
+template<int MaxBits> void BoolMatrix<MaxBits>::Write (FILE* fp)
   {
   for (uint32_t i = 0 ; i < BitWidth ; i++)
     A[i].Write (fp) ;

@@ -1,75 +1,50 @@
+// VerifyFAR <param> <param>...
+//   <param>: -N<states>            Machine states (5 or 6)
+//            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
+//            -V<verification file> Input file: verification data to be checked
+//            -F                    Reconstruct NFA and check it against NFA in dvf
+
 #include <time.h>
 #include <string>
 #include <vector>
 
 #include "../bbchallenge.h"
 #include "FAR.h"
+#include "../Params.h"
 
 //
 // Command-line parameters
 //
 
-class CommandLineParams
+class CommandLineParams : public VerifierParams
   {
 public:
-  static std::string SeedDatabaseFile ;
-  static std::string VerificationFile ;
-  static uint32_t TestMachine ; static bool TestMachinePresent ;
-  static bool CheckNFA ;
-  static bool TraceOutput ;
-  static void Parse (int argc, char** argv) ;
-  static void PrintHelpAndExit [[noreturn]] (int status) ;
+  bool CheckNFA ;
+  void Parse (int argc, char** argv) ;
+  void PrintHelpAndExit [[noreturn]] (int status) ;
   } ;
 
-std::string CommandLineParams::SeedDatabaseFile ;
-std::string CommandLineParams::VerificationFile ;
-uint32_t CommandLineParams::TestMachine ; bool CommandLineParams::TestMachinePresent ;
-bool CommandLineParams::CheckNFA ;
-bool CommandLineParams::TraceOutput ;
+static CommandLineParams Params ;
+static TuringMachineReader Reader ;
 
 int main (int argc, char** argv)
   {
-  CommandLineParams::Parse (argc, argv) ;
-  TuringMachineReader Reader (CommandLineParams::SeedDatabaseFile.c_str()) ;
+  Params.Parse (argc, argv) ;
+  Params.CheckParameters() ;
+  Params.OpenFiles() ;
 
-  // Open the Decider Verification File
-  FiniteAutomataReduction Verifier (CommandLineParams::CheckNFA, CommandLineParams::TraceOutput) ;
-  Verifier.fp = fopen (CommandLineParams::VerificationFile.c_str(), "rb") ;
-  if (Verifier.fp == 0)
-    printf ("File \"%s\" not found\n", CommandLineParams::VerificationFile.c_str()), exit (1) ;
+  Reader.SetParams (&Params) ;
 
-  // First uint in dvf is number of machines
-  uint32_t nMachines = Read32 (Verifier.fp) ;
+  FiniteAutomataReduction Verifier (Params.MachineStates, Params.fpVerify, Params.CheckNFA) ;
+
+  uint8_t MachineSpec[MAX_MACHINE_SPEC_SIZE] ;
   int LastPercent = -1 ;
-  uint8_t MachineSpec[MACHINE_SPEC_SIZE] ;
-
-  if (CommandLineParams::TestMachinePresent)
-    {
-    // Verify a single machine (for development purposes)
-    for ( ; ; )
-      {
-      Verifier.SeedDatabaseIndex = Read32 (Verifier.fp) ;
-      if (Verifier.SeedDatabaseIndex < CommandLineParams::TestMachine)
-        {
-        Verifier.ReadVerificationInfo() ;
-        continue ;
-        }
-      if (Verifier.SeedDatabaseIndex != CommandLineParams::TestMachine)
-        printf ("Machine %d not found\n", CommandLineParams::TestMachine), exit (1) ;
-      Reader.Read (Verifier.SeedDatabaseIndex, MachineSpec) ;
-      Verifier.ReadVerificationInfo() ;
-
-      Verifier.Verify (MachineSpec) ;
-
-      exit (0) ;
-      }
-    }
 
   clock_t Timer = clock() ;
 
-  for (uint32_t Entry = 0 ; Entry < nMachines ; Entry++)
+  for (uint32_t Entry = 0 ; Entry < Reader.nMachines ; Entry++)
     {
-    int Percent = ((Entry + 1) * 100LL) / nMachines ;
+    int Percent = ((Entry + 1) * 100LL) / Reader.nMachines ;
     if (Percent != LastPercent)
       {
       printf ("\r%d%%", Percent) ;
@@ -92,11 +67,10 @@ int main (int argc, char** argv)
 
   Timer = clock() - Timer ;
 
-  if (fread (MachineSpec, 1, 1, Verifier.fp) != 0)
-    printf ("File too long!\n"), exit (1) ;
+  if (!CheckEndOfFile (Verifier.fp)) printf ("File too long!\n"), exit (1) ;
   fclose (Verifier.fp) ;
 
-  printf ("\n%d machines verified\n", nMachines) ;
+  printf ("\n%d machines verified\n", Reader.nMachines) ;
   printf ("Elapsed time %.3f\n", (double)Timer / CLOCKS_PER_SEC) ;
 
   for (uint32_t i = 0 ; i <= FiniteAutomataReduction::MaxDFA_States ; i++)
@@ -109,29 +83,11 @@ void CommandLineParams::Parse (int argc, char** argv)
 
   for (argc--, argv++ ; argc ; argc--, argv++)
     {
+    if (CommonParams::ParseParam (argv[0])) continue ;
     if (argv[0][0] != '-') printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
     switch (toupper (argv[0][1]))
       {
-      case 'D':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        SeedDatabaseFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'V':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        VerificationFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'X':
-        TestMachine = atoi (&argv[0][2]) ;
-        TestMachinePresent = true ;
-        break ;
-
-      case 'O':
-        TraceOutput = true ;
-        break ;
-
-      case 'C':
+      case 'F':
         CheckNFA = true ;
         break ;
 
@@ -141,18 +97,15 @@ void CommandLineParams::Parse (int argc, char** argv)
       }
     }
 
-  if (VerificationFile.empty()) printf ("Verification file not specified\n"), PrintHelpAndExit (1) ;
+  if (VerificationFilename.empty()) printf ("Verification file not specified\n"), PrintHelpAndExit (1) ;
   }
 
 void CommandLineParams::PrintHelpAndExit (int status)
   {
+  printf ("VerifyFAR <param> <param>...\n") ;
+  CommonParams::PrintHelp() ;
   printf (R"*RAW*(
-VerifyFAR <param> <param>...
-  <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
-           -V<verification file>  Decider Verification File for decided machines
-           -X<test machine>       Machine to test
-           -F                     Reconstruct NFA and check it against NFA in dvf
-           -O                     Trace output
+           -F                    Reconstruct NFA and check it against NFA in dvf
 )*RAW*") ;
   exit (status) ;
   }

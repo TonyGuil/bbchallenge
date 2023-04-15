@@ -1,14 +1,13 @@
 #include <algorithm>
 #include "FAR.h"
 
-bool FiniteAutomataReduction::RunDecider (uint32_t DFA_States,
-  const uint8_t* MachineSpec, uint8_t* VerificationEntry)
+bool FiniteAutomataReduction::RunDecider (uint32_t DFA_States, const uint8_t* MachineSpec, uint8_t* VerificationEntry)
   {
   if (TraceOutput) printf ("#%d\n", SeedDatabaseIndex) ;
 
-  this -> DFA_States = DFA_States ;
-  NFA_States = 5 * DFA_States + 1 ;
-  HALT_State = NFA_States - 1 ;
+  *VerificationEntry = 0xFF ; // i.e. not decided
+
+  SetDFA_States (DFA_States) ;
 
   Matrix RStack[2 * MaxDFA_States + 1][2] ;
   Vector aStack[2 * MaxDFA_States + 1] ;
@@ -32,12 +31,12 @@ bool FiniteAutomataReduction::RunDecider (uint32_t DFA_States,
   
     // 7'
     const uint8_t* p = MachineSpec ;
-    for (uint8_t f = 0 ; f < 5 ; f++) // A-E
+    for (uint8_t f = 0 ; f < MachineStates ; f++) // A-E
       for (uint8_t r = 0 ; r <= 1 ; r++)
         {
         if (p[2] == 0) // HALT transition
           for (uint32_t i = 0 ; i < DFA_States ; i++)
-            RStack[0][r][5*i + f].SetBit (HALT_State) ;
+            RStack[0][r][MachineStates*i + f].SetBit (HALT_State) ;
         p += 3 ;
         }
   
@@ -64,7 +63,9 @@ bool FiniteAutomataReduction::RunDecider (uint32_t DFA_States,
           a = aStack[k] ;
 
           Verify (MachineSpec) ;
-          MakeVerificationEntry (VerificationEntry) ;
+
+          VerificationEntry[0] = Direction ;
+          memcpy (VerificationEntry + 1, DFA, 2 * DFA_States) ;
           return true ;
           }
         uint32_t q_new = m[k - 1] + 1 ;
@@ -90,20 +91,23 @@ Failed:
 
 bool FiniteAutomataReduction::ExtendNFA (const uint8_t* MachineSpec, Matrix R[2], Vector& a, uint32_t k)
   {
+  TuringMachineSpec::Transition T ;
+  const uint8_t* p ; 
+
   // 9'
-  const uint8_t* p = MachineSpec ;
   uint32_t i = (k - 1) / 2 ;
   uint32_t w = (k - 1) & 1 ;
-  for (uint8_t f = 0 ; f < 5 ; f++) // A-E
+  p = MachineSpec ;
+  for (uint8_t f = 0 ; f < MachineStates ; f++) // A-E or A-F
     for (uint8_t r = 0 ; r <= 1 ; r++)
       {
-      if (p[2] != 0 && p[1] == Direction && p[0] == w) // Right-rule
+      UnpackSpec (&T, p) ; p += 3 ;
+      if (T.Next != 0 && T.Move == Direction && T.Write == w) // Right-rule
         {
-        uint8_t t = p[2] - 1 ; // Convert state from 1-based to 0-based
+        uint8_t t = T.Next - 1 ; // Convert state from 1-based to 0-based
         uint32_t d = DFA[i][w] ;
-        R[r][5*i + f].SetBit (5*d + t) ;
+        R[r][MachineStates*i + f].SetBit (MachineStates*d + t) ;
         }
-      p += 3 ;
       }
 
   // 8'
@@ -111,28 +115,29 @@ bool FiniteAutomataReduction::ExtendNFA (const uint8_t* MachineSpec, Matrix R[2]
     {
     bool Changed = false ;
     p = MachineSpec ;
-    for (uint8_t f = 0 ; f < 5 ; f++) // A-E
+    for (uint8_t f = 0 ; f < MachineStates ; f++) // A-E
       for (uint8_t r = 0 ; r <= 1 ; r++)
         {
-        if (p[2] != 0 && p[1] != Direction) // Left-rule
+        UnpackSpec (&T, p) ; p += 3 ;
+        if (T.Next != 0 && T.Move != Direction) // Left-rule
           {
-          uint8_t t = p[2] - 1 ; // Convert state from 1-based to 0-based
-          w = p[0] ;
+          uint8_t t = T.Next - 1 ; // Convert state from 1-based to 0-based
+          w = T.Write ;
           for (uint32_t j = 1 ; j <= k ; j++)
             {
             i = (j - 1) / 2 ;
             uint32_t b = (j - 1) & 1 ;
             uint32_t d = DFA[i][b] ;
-            Vector v = R[b][5*i + t] * R[w] ;
-            if (!(R[r][5*d + f] >= v))
+            Vector v = R[b][MachineStates*i + t] * R[w] ;
+            if (!(R[r][MachineStates*d + f] >= v))
               {
-              R[r][5*d + f] += v ;
+              R[r][MachineStates*d + f] += v ;
               Changed = true ;
               }
             }
           }
-        p += 3 ;
         }
+
     if (!Changed) break ;
     }
 

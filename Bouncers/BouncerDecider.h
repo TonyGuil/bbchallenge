@@ -5,12 +5,13 @@
 class BouncerDecider : public Bouncer
   {
 public:
-  BouncerDecider (uint32_t TimeLimit, uint32_t SpaceLimit, bool TraceOutput)
-  : Bouncer (SpaceLimit, TraceOutput)
+  BouncerDecider (uint32_t MachineStates, uint32_t TimeLimit,
+    uint32_t SpaceLimit, bool TraceOutput)
+  : Bouncer (MachineStates, SpaceLimit, TraceOutput)
   , TimeLimit (TimeLimit)
   , FinalTape (this)
     {
-    Clone = new TuringMachine (SpaceLimit) ;
+    Clone = new TuringMachine (MachineStates, SpaceLimit) ;
 
     // Allocate workspace
     RecordLimit = 5000 ; // for now
@@ -22,7 +23,7 @@ public:
     }
 
   void ThreadFunction (int nMachines, const uint32_t* MachineIndexList,
-    const uint8_t* MachineSpecList, uint8_t* VerificationEntryList, uint32_t VerifLength) ;
+    const uint8_t* MachineSpecList, uint32_t MachineSpecSize, uint8_t* VerificationEntryList, uint32_t VerifLength) ;
 
   bool RunDecider (const uint8_t* MachineSpec, uint8_t* VerificationEntry) ;
 
@@ -34,8 +35,8 @@ public:
     } ;
   Record* LeftRecordList ;
   Record* RightRecordList ;
-  Record* LatestLeftRecord[NSTATES + 1] ;
-  Record* LatestRightRecord[NSTATES + 1] ;
+  Record* LatestLeftRecord[MAX_MACHINE_STATES + 1] ;
+  Record* LatestRightRecord[MAX_MACHINE_STATES + 1] ;
   uint32_t TimeLimit ;
   uint32_t RecordLimit ;
 
@@ -61,10 +62,11 @@ public:
 
   TuringMachine* Clone ;
 
-  bool DetectRepetition (Record* LatestRecord[], uint8_t State, uint8_t* VerificationEntry) ;
+  bool DetectRepetition (const Record* LatestRecord, uint8_t State, uint8_t* VerificationEntry) ;
   bool QuadraticProgression (int a1, int a2, int a3, int a4) ;
   void GetRepetitionParams (int a1, int a2, int a3) ;
   bool FindRuns (Config* Run1, Config* Run2) ;
+  bool BuildVerificationData (uint8_t* VerificationEntry) ;
 
   int CycleShift ; // Change in TapeHead after a whole cycle of runs
   int Cycle1Leftmost, Cycle1Rightmost ;
@@ -80,7 +82,7 @@ public:
   std::vector<uint8_t> TB_Wall ;
   std::vector<uint8_t> TB_Repeater ;
   uint32_t TB_RepeaterCount ;
-  void MakeTranslatedBouncerData() ;
+  bool MakeTranslatedBouncerData() ;
 
   struct RunData
     {
@@ -121,29 +123,29 @@ public:
     uint8_t Partition ;
     int8_t Direction ;
 
-    Transition RepeaterTransition ;
-    Transition WallTransition ;
+    SegmentTransition RepeaterTransition ;
+    SegmentTransition WallTransition ;
     } ;
 
   RunDataTransitions RunDescriptorArray[MAX_RUNS] ;
 
   void ConvertRunData (RunDataTransitions& To, const RunData& From) ;
   bool AnalyseTape_Wall (const TuringMachine* TM, TapeDescriptor& TD, uint32_t CurrentWall,
-    const Transition& Tr, int Leftmost, int Rightmost) ;
+    const SegmentTransition& Tr, int Leftmost, int Rightmost) ;
   bool AnalyseTape_Repeater (const TuringMachine* TM, TapeDescriptor& TD, uint32_t CurrentWall,
-    uint32_t CurrentPartition, const Transition& Tr, int Leftmost, int Rightmost) ;
+    uint32_t CurrentPartition, const SegmentTransition& Tr, int Leftmost, int Rightmost) ;
   void DecrementRepeaterCount (uint32_t Partition) ;
   void GetMaxWallExtents() ;
   bool GetRepeaterExtent_leftward (const TuringMachine* TM, uint32_t Partition,
     int& SequenceStart, int& SequenceEnd, int Leftmost, int Rightmost) ;
   bool GetRepeaterExtent_rightward (const TuringMachine* TM, uint32_t Partition,
     int& SequenceStart, int& SequenceEnd, int Leftmost, int Rightmost) ;
-  bool RemoveGap (TapeDescriptor& TD, const Transition& Tr) ;
-  bool TruncateWall (TapeDescriptor& TD, const Transition& Tr) ;
+  bool RemoveGap (TapeDescriptor& TD, const SegmentTransition& Tr) ;
+  bool TruncateWall (TapeDescriptor& TD, const SegmentTransition& Tr) ;
 
   // Verification data
   uint32_t WriteTapeDescriptor (uint8_t* VerificationEntry, const TuringMachine* TM, const TapeDescriptor& TD) const ;
-  uint32_t WriteTransition (uint8_t* VerificationEntry, const Transition& Tr) const ;
+  uint32_t WriteTransition (uint8_t* VerificationEntry, const SegmentTransition& Tr) const ;
   uint32_t WriteSegment (uint8_t* VerificationEntry, const Segment& Seg) const ;
 
   // Diagnostics
@@ -151,6 +153,6 @@ public:
 
   void DumpRunData() ;
   void DumpTransitions() ;
-  void PrintTransition (const Transition& Tr) ;
+  void PrintTransition (const SegmentTransition& Tr) ;
   void PrintTape (const TapeDescriptor& Tape) ;
   } ;

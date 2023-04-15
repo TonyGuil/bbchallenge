@@ -1,0 +1,85 @@
+All Deciders were run on the 5-state Seed Database from bbchallenge.org containing 88,664,064 machines. The Undecided Machine File of each was fed to the next Decider, leaving 1,587 undecided machines (in FAR/FAR.umf).
+
+Cyclers
+=======
+Cyclers>DecideCyclers -UCyclers.umf -VCyclers.dvf -T1000 -S200
+nThreads = 8
+Decided 11229238 out of 14322029 time-limited machines
+Elapsed time 70.087
+
+Cyclers>VerifyCyclers -VCyclers.dvf
+11229238 Cyclers verified
+Max 796 steps
+Elapsed time 51.794
+
+Backward Reasoning
+==================
+BackwardReasoning>BackwardReasoning -S75 -I../Cyclers/Cyclers.umf -UBackwardReasoning.umf -VBackwardReasoning.dvf
+Decided 37090723 out of 77434826
+Elapsed time 671.393
+
+Translated Cyclers
+==================
+TranslatedCyclers>DecideTranslatedCyclers -I../BackwardReasoning/BackwardReasoning.umf -UTranslatedCyclers.umf -VTranslatedCyclers.dvf -T20000000 -S100000 -h4
+Decided 38805555 out of 39109738 space-limited machines
+Elapsed time 21933.277
+
+TranslatedCyclers>VerifyTranslatedCyclers.exe -vTranslatedCyclers.dvf -S100000
+38805555 TranslatedCyclers verified
+Max 15402936 steps
+Max match length 552
+Max period 2851002
+Max shift 11176
+-34254 <= TapeHead <= 59368
+Elapsed time 248.982
+
+Bouncers
+========
+Bouncers>DecideBouncers -I../TranslatedCyclers/TranslatedCyclers.umf -UBouncers.umf -VBouncers.dvf -T1000000 -S20000 -B -h4
+Decided 1406010 out of 1538548
+Elapsed time 12869.099
+258973 Unilateral
+1060763 Bilateral
+86274 Translated
+
+193433 Double
+30904 Multiple
+6370 Partitioned
+18651 Probable Bells
+
+1668199: 156 runs
+2901999: RepeaterPeriod 1302
+
+Bouncers>VerifyBouncers -VBouncers.dvf
+1406010 Bouncers verified
+Elapsed time 35.693
+
+Halting Segments
+================
+HaltingSegments>HaltingSegments -W21 -I..\Bouncers\Bouncers.umf -UHaltingSegments.umf -VHaltin
+gSegments.dvf -h4
+Decided 46581 out of 132538
+Elapsed time 6971.437
+
+Max search depth for decided machines by segment width:
+3: 19 (#905609)
+5: 48 (#57413521)
+7: 123 (#4804200)
+9: 203 (#56741549)
+11: 470 (#5509482)
+13: 957 (#6945585)
+15: 443 (#9265674)
+17: 1122 (#10095132)
+19: 739 (#598692)
+21: 1151 (#5200712)
+
+Finite Automata Reduction
+=========================
+FAR>DecideFAR -A7 -I../HaltingSegments/HaltingSegments.umf -UFAR.umf -VFAR.dvf -h4
+Decided 84370 out of 85957
+Elapsed time 19895.404
+
+FAR>VerifyFAR -vFAR.dvf
+84370 machines verified
+Elapsed time 4.575
+7: 84370

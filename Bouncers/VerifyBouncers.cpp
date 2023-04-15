@@ -1,47 +1,56 @@
-// VerifyBouncers.cpp: verification program for Bouncers decider
-//
-// To invoke:
-//
-//   VerifyBouncers <param> <param>...
-//     <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
-//              -V<verification file>  Output file: verification data for decided machines
-//              -S<space limit>        Max absolute value of tape head
+// VerifyBouncers <param> <param>...
+//   <param>: -N<states>            Machine states (5 or 6)
+//            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
+//            -V<verification file> Input file: verification data to be checked
+//            -S<space limit>       Max absolute value of tape head
 //
 // Format of verification info:
 //
-// byte BouncerType
-// uint nSteps
-// ubyte nPartitions
-// ubyte nRuns
-// ushort RepeaterCount[nPartitions]
-// TapeDescriptor InitialTape
-// RunDescriptor RunList[nRuns]
+//   byte BouncerType  -- Unilateral=1, Bilateral=2, Translated=3
+//   ubyte nPartitions -- usually 1, but can be up to 4 (so far)
+//   ushort nRuns      -- usually 2, but can be up to 156 (so far)
+// 
+//   uint InitialSteps    -- Steps to reach the start of the Cycle
+//   int InitialLeftmost  -- Leftmost cell visited at start of Cycle
+//   int InitialRightmost -- Rightmost cell visited at start of Cycle
+// 
+//   uint FinalSteps      -- Steps to reach the end of the Cycle
+//   int FinalLeftmost    -- Leftmost cell visited at end of Cycle
+//   int FinalRightmost   -- Rightmost cell visited at end of Cycle
+// 
+//   ushort RepeaterCount[nPartitions] -- the Repeater count for each partition
+//                                     -- remains constant throughout the cycle
+//   TapeDescriptor InitialTape   -- Tape contents and state at start of Cycle
+//   RunDescriptor RunList[nRuns] -- Definition of each Run
 // 
 // RunDescriptor:
-//   ubyte RepeaterCount
-//   Transition RepeaterTransition -- repeated RepeaterCount times
-//   TapeDescriptor TD0
-//   Transition WallTransition
-//   TapeDescriptor TD1
+//   ubyte Partition -- Partiton which the Repeaters traverse
+//   SegmentTransition RepeaterTransition
+//   TapeDescriptor TD0 -- Tape contents and state after executing the RepeaterTransitions
+//   SegmentTransition WallTransition
+//   TapeDescriptor TD1 -- Tape contents and state after executing the WallTransition
 // 
-// Transition:
-//   Segment Initial
-//   Segment Final
+// SegmentTransition: -- defines a transition from an initial tape segment to a final tape segment
+//   ushort nSteps
+//   Segment Initial -- Initial.TapeHead must be strictly contained in Tape
+//   Segment Final   -- Final.TapeHead may lie immediately to the left or right of Tape
 // 
-// Segment:
+// Segment: -- a short stretch of tape, with state and tape head
 //   ubyte State
 //   short TapeHead -- relative to Tape[0]
-//   ubytearray Tape
+//   ByteArray Tape
 // 
 // TapeDescriptor:
-//   int Leftmost
+//   -- Wall[0] Repeater[0] ... Wall[nPartitions-1] Repeater[nPartitions-1]  Wall[nPartitions]
+//   -- For each partition, the number of repetitions of each Repeater remains unchanged
+//   -- throughout the Cycle, and is found in the RepeaterCount array in the VerificationInfo
 //   ubyte State
 //   ubyte TapeHeadWall
-//   short TapeHeadOffset
-//   ubytearray Wall[nPartitions + 1]
-//   ubytearray Repeater[nPartitions]
+//   short TapeHeadOffset -- Offset of tape head relative to Wall[TapeHeadWall]
+//   ByteArray Wall[nPartitions + 1]
+//   ByteArray Repeater[nPartitions]
 // 
-// ubytearray:
+// ByteArray:
 //   ushort Len
 //   ubyte Data[Len]
 
@@ -53,42 +62,39 @@
 #include <string>
 
 #include "BouncerVerifier.h"
+#include "../Params.h"
 
 #define VERIF_INFO_LENGTH 32
 
-class CommandLineParams
+class CommandLineParams : public VerifierParams
   {
 public:
-  static std::string SeedDatabaseFile ;
-  static std::string VerificationFile ;
-  static uint32_t SpaceLimit ;
-  static void Parse (int argc, char** argv) ;
-  static void PrintHelpAndExit [[noreturn]] (int status) ;
+  uint32_t SpaceLimit = 5000 ;
+  void Parse (int argc, char** argv) ;
+  void PrintHelpAndExit [[noreturn]] (int status) ;
   } ;
 
-std::string CommandLineParams::SeedDatabaseFile ;
-std::string CommandLineParams::VerificationFile ;
-uint32_t CommandLineParams::SpaceLimit = 5000 ;
+static CommandLineParams Params ;
+static TuringMachineReader Reader ;
 
 int main (int argc, char** argv)
   {
-  CommandLineParams::Parse (argc, argv) ;
-  TuringMachineReader Reader (CommandLineParams::SeedDatabaseFile.c_str()) ;
+  Params.Parse (argc, argv) ;
+  Params.CheckParameters() ;
+  Params.OpenFiles() ;
 
-  BouncerVerifier Verifier (CommandLineParams::SpaceLimit) ;
-  Verifier.fp = fopen (CommandLineParams::VerificationFile.c_str(), "rb") ;
-  if (Verifier.fp == 0)
-    printf ("File \"%s\" not found\n", CommandLineParams::VerificationFile.c_str()), exit (1) ;
+  Reader.SetParams (&Params) ;
 
-  uint32_t nEntries = Read32 (Verifier.fp) ;
+  BouncerVerifier Verifier (Params.MachineStates, Params.SpaceLimit) ;
   int LastPercent = -1 ;
-  uint8_t MachineSpec[MACHINE_SPEC_SIZE] ;
+  uint8_t MachineSpec[MAX_MACHINE_SPEC_SIZE] ;
 
   clock_t Timer = clock() ;
 
-  for (uint32_t Entry = 0 ; Entry < nEntries ; Entry++)
+  uint32_t nHalters = 0 ;
+  for (uint32_t Entry = 0 ; Entry < Reader.nMachines ; Entry++)
     {
-    int Percent = ((Entry + 1) * 100LL) / nEntries ;
+    int Percent = ((Entry + 1) * 100LL) / Reader.nMachines ;
     if (Percent != LastPercent)
       {
       printf ("\r%d%%", Percent) ;
@@ -96,20 +102,32 @@ int main (int argc, char** argv)
       LastPercent = Percent ;
       }
 
-    uint32_t SeedDatabaseIndex = Read32 (Verifier.fp) ;
-    if (DeciderTag (Read32 (Verifier.fp)) != DeciderTag::BOUNCER)
-      printf ("\n%d: Unrecognised DeciderTag\n", SeedDatabaseIndex), exit (1) ;
+    uint32_t MachineIndex = Read32 (Params.fpVerify) ;
+    Reader.Read (MachineIndex, MachineSpec) ;
+    Verifier.Initialise (MachineIndex, MachineSpec) ;
 
-    Reader.Read (SeedDatabaseIndex, MachineSpec) ;
-    Verifier.Verify (SeedDatabaseIndex, MachineSpec, Verifier.fp) ;
+    switch (DeciderTag (Read32 (Params.fpVerify)))
+      {
+      case DeciderTag::BOUNCER:
+        Verifier.Verify (Params.fpVerify) ;
+        break ;
+
+      case DeciderTag::HALT:
+        Verifier.VerifyHalter (Params.fpVerify) ;
+        nHalters++ ;
+        break ;
+
+      default:
+        printf ("\n%d: Unrecognised DeciderTag\n", MachineIndex), exit (1) ;
+      }
     }
 
   Timer = clock() - Timer ;
 
-  if (fread (MachineSpec, 1, 1, Verifier.fp) != 0)
-    printf ("File too long!\n"), exit (1) ;
-  fclose (Verifier.fp) ;
-  printf ("\n%d Bouncers verified\n", nEntries) ;
+  if (!CheckEndOfFile (Params.fpVerify)) printf ("File too long!\n"), exit (1) ;
+  fclose (Params.fpVerify) ;
+  printf ("\n%d Bouncers verified\n", Reader.nMachines - nHalters) ;
+  if (nHalters) printf ("%d Halters verified\n", nHalters) ;
   printf ("Elapsed time %.3f\n", (double)Timer / CLOCKS_PER_SEC) ;
   }
 
@@ -119,19 +137,10 @@ void CommandLineParams::Parse (int argc, char** argv)
 
   for (argc--, argv++ ; argc ; argc--, argv++)
     {
+    if (CommonParams::ParseParam (argv[0])) continue ;
     if (argv[0][0] != '-') printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
     switch (toupper (argv[0][1]))
       {
-      case 'D':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        SeedDatabaseFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'V':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        VerificationFile = std::string (&argv[0][2]) ;
-        break ;
-
       case 'S':
         SpaceLimit = atoi (&argv[0][2]) ;
         break ;
@@ -142,16 +151,15 @@ void CommandLineParams::Parse (int argc, char** argv)
       }
     }
 
-  if (VerificationFile.empty()) printf ("Verification file not specified\n"), PrintHelpAndExit (1) ;
+  if (VerificationFilename.empty()) printf ("Verification file not specified\n"), PrintHelpAndExit (1) ;
   }
 
 void CommandLineParams::PrintHelpAndExit (int status)
   {
+  printf ("VerifyBouncers <param> <param>...") ;
+  CommonParams::PrintHelp() ;
   printf (R"*RAW*(
-VerifyBouncers <param> <param>...
-  <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
-           -V<verification file>  Decider Verification File for decided machines
-           -S<space limit>        Max absolute value of tape head
+           -S<space limit>       Max absolute value of tape head
 )*RAW*") ;
   exit (status) ;
   }

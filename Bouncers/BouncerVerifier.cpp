@@ -1,9 +1,7 @@
 #include "BouncerVerifier.h"
 
-void BouncerVerifier::Verify (uint32_t SeedDatabaseIndex, const uint8_t* MachineSpec, FILE* fp)
+void BouncerVerifier::Verify (FILE* fp)
   {
-  Initialise (SeedDatabaseIndex, MachineSpec) ;
-
   int InfoLength = Read32 (fp) ;
   long StartPos = ftell (fp) ;
 
@@ -49,7 +47,7 @@ void BouncerVerifier::Verify (uint32_t SeedDatabaseIndex, const uint8_t* Machine
     {
     ReadRunDescriptor (fp, RD) ;
 
-    // Check that each Transition is compatible with its predecessor and follower.
+    // Check that each SegmentTransition is compatible with its predecessor and follower.
     // This includes checking that a RepeaterTransition is compatible with itself.
     if (i == 0) FirstSeg = RD.RepeaterTransition.Initial ; // to be checked at the end
     else CheckFollowOn (PreviousSeg, RD.RepeaterTransition.Initial) ;
@@ -83,7 +81,7 @@ void BouncerVerifier::Verify (uint32_t SeedDatabaseIndex, const uint8_t* Machine
     PreviousTape = RD.TD1 ;
     }
 
-  // Check that the last Transition segment wraps around correctly to the first
+  // Check that the last SegmentTransition segment wraps around correctly to the first
   CheckFollowOn (PreviousSeg, FirstSeg) ;
 
   // Check FinalSteps, FinalLeftmost, and FinalRightmost
@@ -125,7 +123,7 @@ void BouncerVerifier::ReadRunDescriptor (FILE* fp, RunDescriptor& RD)
   ReadTapeDescriptor (fp, RD.TD1) ;
   }
 
-void BouncerVerifier::ReadTransition (FILE* fp, Transition& Tr)
+void BouncerVerifier::ReadTransition (FILE* fp, SegmentTransition& Tr)
   {
   Tr.nSteps = Read16u (fp) ;
   ReadSegment (fp, Tr.Initial) ;
@@ -136,7 +134,7 @@ void BouncerVerifier::ReadTransition (FILE* fp, Transition& Tr)
 void BouncerVerifier::ReadSegment (FILE* fp, Segment& Seg)
   {
   Seg.State = Read8u (fp) ;
-  if (Seg.State < 1 || Seg.State > 5) VERIFY_ERROR() ;
+  if (Seg.State < 1 || Seg.State > MachineStates) VERIFY_ERROR() ;
   Seg.TapeHead = Read16s (fp) ;
   ReadByteArray (fp, Seg.Tape) ;
   }
@@ -149,7 +147,7 @@ void BouncerVerifier::ReadTapeDescriptor (FILE* fp, TapeDescriptor& TD)
   memcpy (TD.RepeaterCount, RepeaterCount, nPartitions * sizeof (uint32_t)) ;
 
   TD.State = Read8u (fp) ;
-  if (TD.State < 1 || TD.State > 5) VERIFY_ERROR() ;
+  if (TD.State < 1 || TD.State > MachineStates) VERIFY_ERROR() ;
   TD.TapeHeadWall = Read8u (fp) ;
   TD.TapeHeadOffset = Read16s (fp) ;
   for (uint32_t i = 0 ; i <= nPartitions ; i++)
@@ -163,5 +161,13 @@ void BouncerVerifier::ReadByteArray (FILE* fp, std::vector<uint8_t>& Data)
   uint32_t Len = Read16u (fp) ;
   Data.clear() ;
   Data.resize (Len) ;
-  if (Len && fread (&Data[0], Len, 1, fp) != 1) VERIFY_ERROR() ;
+  Read (fp, &Data[0], Len) ;
+  }
+
+void BouncerVerifier::VerifyHalter (FILE* fp)
+  {
+  if (Read32 (fp) != 4) VERIFY_ERROR() ; // InfoLength
+  uint32_t nSteps = Read32 (fp) ;
+  while (--nSteps) if (Step() != StepResult::OK) VERIFY_ERROR() ;
+  if (Step() != StepResult::HALT) VERIFY_ERROR() ;
   }

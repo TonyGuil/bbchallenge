@@ -1,1 +1,1 @@
-HaltingSegments -W17 -I..\backwardreasoning\backwardreasoning.umf -UHaltingSegments.umf -VHaltingSegments.dvf
+HaltingSegments -W21 -I..\Bouncers\Bouncers.umf -UHaltingSegments.umf -VHaltingSegments.dvf -h4

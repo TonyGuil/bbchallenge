@@ -27,14 +27,14 @@ void FiniteAutomataReduction::Verify (const uint8_t* MachineSpec)
   // (6) is vacuously satisfied
 
   const uint8_t* p = MachineSpec ; 
-  for (uint8_t f = 0 ; f < 5 ; f++) // A-E
+  for (uint8_t f = 0 ; f < MachineStates ; f++) // A-E
     for (uint8_t r = 0 ; r <= 1 ; r++)
       {
       if (p[2] == 0) // HALT transition
         {
         // (7')
         for (uint32_t i = 0 ; i < DFA_States ; i++)
-          if (!R[r][5*i + f][HALT_State])
+          if (!R[r][MachineStates*i + f][HALT_State])
             VERIFY_ERROR() ;
         }
       else
@@ -48,7 +48,7 @@ void FiniteAutomataReduction::Verify (const uint8_t* MachineSpec)
           for (uint32_t i = 0 ; i < DFA_States ; i++)
             {
             uint32_t d = DFA[i][w] ;
-            if (!R[r][5*i + f][5*d + t]) VERIFY_ERROR() ;
+            if (!R[r][MachineStates*i + f][MachineStates*d + t]) VERIFY_ERROR() ;
             }
           }
         else // Left-rule
@@ -61,15 +61,15 @@ void FiniteAutomataReduction::Verify (const uint8_t* MachineSpec)
 
               // We need to check that R[r] >= |d,f> <i,t| R[b] R[w]
               //
-              // A = |d,f> <i,t| is a matrix of zeroes except for the entry in
-              // row 5*d + f, column 5*i + t. Pre-multiplying a matrix B by A
-              // has the effect of moving row 5*i + t of B to row 5*d + f,
+              // A = |d,f> <i,t| is a matrix of zeroes except for the entry in row
+              // MachineStates*d + f, column MachineStates*i + t. Pre-multiplying a matrix B by A
+              // has the effect of moving row MachineStates*i + t of B to row MachineStates*d + f,
               // and filling the rest of B with zeroes.
               //
-              // So we need to check that row 5*d + f of R[r] is >= row 5*i + t
-              // of R[b] R[w]. And this row is just R[b][5*i + t] * R[w]:
+              // So we need to check that row MachineStates*d + f of R[r] is >= row MachineStates*i + t
+              // of R[b] R[w]. And this row is just R[b][MachineStates*i + t] * R[w]:
 
-              if (!(R[r][5*d + f] >= R[b][5*i + t] * R[w]))
+              if (!(R[r][MachineStates*d + f] >= R[b][MachineStates*i + t] * R[w]))
                 VERIFY_ERROR() ;
               }
           }
@@ -105,9 +105,10 @@ void FiniteAutomataReduction::ReadVerificationInfo()
     case DeciderTag::FAR_DFA_ONLY:
       Direction = Read8u (fp) ;
       DFA_States = (InfoLen - 1) / 2 ;
-      NFA_States = 5 * DFA_States + 1 ;
+      if (DFA_States > MaxDFA_States) VERIFY_ERROR() ;
+      NFA_States = MachineStates * DFA_States + 1 ;
       HALT_State = NFA_States - 1 ;
-      if (fread (DFA, DFA_States, 2, fp) != 2) VERIFY_ERROR() ;
+      Read (fp, DFA, 2 * DFA_States) ;
       break ;
 
     case DeciderTag::FAR_DFA_NFA:
@@ -116,15 +117,14 @@ void FiniteAutomataReduction::ReadVerificationInfo()
       if (DFA_States > MaxDFA_States) VERIFY_ERROR() ;
       NFA_States = Read16u (fp) ;
       if (NFA_States > MaxNFA_States) VERIFY_ERROR() ;
-      if (NFA_States != 5 * DFA_States + 1) VERIFY_ERROR() ;
+      if (NFA_States != MachineStates * DFA_States + 1) VERIFY_ERROR() ;
     
       if (InfoLen != 5 + 2 * DFA_States + (2 * NFA_States + 1) * ((NFA_States + 7) >> 3))
         VERIFY_ERROR() ;
       HALT_State = NFA_States - 1 ;
     
-      if (fread (DFA, DFA_States, 2, fp) != 2) VERIFY_ERROR() ;
-      for (uint32_t r = 0 ; r <= 1 ; r++)
-        R[r].Read (fp, NFA_States) ;
+      Read (fp, DFA, 2 * DFA_States) ;
+      for (uint32_t r = 0 ; r <= 1 ; r++) R[r].Read (fp, NFA_States) ;
       a.Read (fp, NFA_States) ;
       break ;
 
@@ -144,12 +144,12 @@ void FiniteAutomataReduction::ReconstructNFA (const uint8_t* MachineSpec)
 
   // 7'
   const uint8_t* p = MachineSpec ;
-  for (uint8_t f = 0 ; f < 5 ; f++) // A-E
+  for (uint8_t f = 0 ; f < MachineStates ; f++) // A-E
     for (uint8_t r = 0 ; r <= 1 ; r++)
       {
       if (p[2] == 0) // HALT transition
         for (uint32_t i = 0 ; i < DFA_States ; i++)
-          R[r][5*i + f].SetBit (HALT_State) ;
+          R[r][MachineStates*i + f].SetBit (HALT_State) ;
       p += 3 ;
       }
 
@@ -161,14 +161,14 @@ void FiniteAutomataReduction::ReconstructNFA (const uint8_t* MachineSpec)
     p = MachineSpec ;
     uint32_t i = (k - 1) / 2 ;
     uint32_t w = (k - 1) & 1 ;
-    for (uint8_t f = 0 ; f < 5 ; f++) // A-E
+    for (uint8_t f = 0 ; f < MachineStates ; f++) // A-E
       for (uint8_t r = 0 ; r <= 1 ; r++)
         {
         if (p[2] != 0 && p[1] == Direction && p[0] == w) // Right-rule
           {
           uint8_t t = p[2] - 1 ; // Convert state from 1-based to 0-based
           uint32_t d = DFA[i][w] ;
-          R[r][5*i + f].SetBit (5*d + t) ;
+          R[r][MachineStates*i + f].SetBit (MachineStates*d + t) ;
           }
         p += 3 ;
         }
@@ -178,7 +178,7 @@ void FiniteAutomataReduction::ReconstructNFA (const uint8_t* MachineSpec)
       {
       bool Changed = false ;
       p = MachineSpec ;
-      for (uint8_t f = 0 ; f < 5 ; f++) // A-E
+      for (uint8_t f = 0 ; f < MachineStates ; f++) // A-E
         for (uint8_t r = 0 ; r <= 1 ; r++)
           {
           if (p[2] != 0 && p[1] != Direction) // Left-rule
@@ -190,10 +190,10 @@ void FiniteAutomataReduction::ReconstructNFA (const uint8_t* MachineSpec)
               i = (j - 1) / 2 ;
               uint32_t b = (j - 1) & 1 ;
               uint32_t d = DFA[i][b] ;
-              Vector v = R[b][5*i + t] * R[w] ;
-              if (!(R[r][5*d + f] >= v))
+              Vector v = R[b][MachineStates*i + t] * R[w] ;
+              if (!(R[r][MachineStates*d + f] >= v))
                 {
-                R[r][5*d + f] += v ;
+                R[r][MachineStates*d + f] += v ;
                 Changed = true ;
                 }
               }
@@ -228,8 +228,8 @@ void FiniteAutomataReduction::DumpNFA()
   for (uint32_t r = 0 ; r <= 1 ; r++)
     {
     for (uint32_t i = 0 ; i < NFA_States ; i++)
-      printf ("%0*X ", nDigits, R[r][i].d[0]) ;
+      printf ("%0*llX ", nDigits, R[r][i].d[0]) ;
     printf ("\n") ;
     }
-  printf ("%0*X\n", nDigits, a.d[0]) ;
+  printf ("%0*llX\n", nDigits, a.d[0]) ;
   }

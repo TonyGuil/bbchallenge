@@ -1,11 +1,7 @@
-// VerifyTranslatedCyclers.cpp: verification program for Translated Cyclers decider
-//
-// To invoke:
-//
-//   VerifyTranslatedCyclers <param> <param>...
-//     <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
-//              -V<verification file>  Output file: verification data for decided machines
-//              -S<space limit>        Max absolute value of tape head
+// VerifyTranslatedCyclers <param> <param>...
+//   <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
+//            -V<verification file>  Input file: verification data to be checked
+//            -S<space limit>        Max absolute value of tape head
 //
 // Format of verification info:
 //
@@ -25,28 +21,25 @@
 #include <time.h>
 #include <string>
 
-#include "../bbchallenge.h"
+#include "../TuringMachine.h"
+#include "../Params.h"
 
 #define VERIF_INFO_LENGTH 32
 
-class CommandLineParams
+class CommandLineParams : public VerifierParams
   {
 public:
-  static std::string SeedDatabaseFile ;
-  static std::string VerificationFile ;
-  static uint32_t SpaceLimit ;
-  static void Parse (int argc, char** argv) ;
-  static void PrintHelpAndExit [[noreturn]] (int status) ;
+  uint32_t SpaceLimit = 50000 ; // Needed to verify #60054343
+  void Parse (int argc, char** argv) ;
+  virtual void PrintHelpAndExit (int status) ;
   } ;
-
-std::string CommandLineParams::SeedDatabaseFile ;
-std::string CommandLineParams::VerificationFile ;
-uint32_t CommandLineParams::SpaceLimit = 50000 ; // Needed to verify #60054343
+static CommandLineParams Params ;
 
 class TranslatedCyclerVerifier : public TuringMachine
   {
 public:
-  TranslatedCyclerVerifier (uint32_t SpaceLimit) : TuringMachine (SpaceLimit)
+  TranslatedCyclerVerifier (uint32_t MachineStates, uint32_t SpaceLimit)
+  : TuringMachine (MachineStates, SpaceLimit)
     {
     MatchContents = new uint8_t[2 * SpaceLimit + 1] ;
     MaxSteps = MaxMatchLength = MaxPeriod = MaxShift = 0 ;
@@ -67,22 +60,21 @@ public:
 
 int main (int argc, char** argv)
   {
-  CommandLineParams::Parse (argc, argv) ;
-  TuringMachineReader Reader (CommandLineParams::SeedDatabaseFile.c_str()) ;
-  FILE* fpVerify = fopen (CommandLineParams::VerificationFile.c_str(), "rb") ;
-  if (fpVerify == 0)
-    printf ("File \"%s\" not found\n", CommandLineParams::VerificationFile.c_str()), exit (1) ;
+  Params.Parse (argc, argv) ;
+  Params.CheckParameters() ;
+  Params.OpenFiles() ;
 
-  uint32_t nEntries = Read32 (fpVerify) ;
+  TuringMachineReader Reader (&Params) ;
+
   int LastPercent = -1 ;
-  uint8_t MachineSpec[MACHINE_SPEC_SIZE] ;
-  TranslatedCyclerVerifier Verifier (CommandLineParams::SpaceLimit) ;
+  uint8_t MachineSpec[MAX_MACHINE_SPEC_SIZE] ;
+  TranslatedCyclerVerifier Verifier (Params.MachineStates, Params.SpaceLimit) ;
 
   clock_t Timer = clock() ;
 
-  for (uint32_t Entry = 0 ; Entry < nEntries ; Entry++)
+  for (uint32_t Entry = 0 ; Entry < Reader.nMachines ; Entry++)
     {
-    int Percent = ((Entry + 1) * 100LL) / nEntries ;
+    int Percent = ((Entry + 1) * 100LL) / Reader.nMachines ;
     if (Percent != LastPercent)
       {
       printf ("\r%d%%", Percent) ;
@@ -90,25 +82,25 @@ int main (int argc, char** argv)
       LastPercent = Percent ;
       }
 
-    uint32_t SeedDatabaseIndex = Read32 (fpVerify) ;
+    uint32_t MachineIndex = Read32 (Params.fpVerify) ;
     bool TranslateLeft ;
-    switch (DeciderTag (Read32 (fpVerify)))
+    switch (DeciderTag (Read32 (Params.fpVerify)))
       {
       case DeciderTag::TRANSLATED_CYCLER_LEFT: TranslateLeft = true ; break ;
       case DeciderTag::TRANSLATED_CYCLER_RIGHT: TranslateLeft = false ; break ;
       default: printf ("\nUnrecognised DeciderTag\n") ; exit (1) ;
       }
 
-    Reader.Read (SeedDatabaseIndex, MachineSpec) ;
-    Verifier.Verify (SeedDatabaseIndex, MachineSpec, fpVerify, TranslateLeft) ;
+    Reader.Read (MachineIndex, MachineSpec) ;
+    Verifier.Verify (MachineIndex, MachineSpec, Params.fpVerify, TranslateLeft) ;
     }
 
   Timer = clock() - Timer ;
 
-  if (fread (MachineSpec, 1, 1, fpVerify) != 0)
+  if (fread (MachineSpec, 1, 1, Params.fpVerify) != 0)
     printf ("File too long!\n"), exit (1) ;
-  fclose (fpVerify) ;
-  printf ("\n%d TranslatedCyclers verified\n", nEntries) ;
+  fclose (Params.fpVerify) ;
+  printf ("\n%d TranslatedCyclers verified\n", Reader.nMachines) ;
   printf ("Max %d steps\n", Verifier.MaxSteps) ;
   printf ("Max match length %d\n", Verifier.MaxMatchLength) ;
   printf ("Max period %d\n", Verifier.MaxPeriod) ;
@@ -132,14 +124,14 @@ void TranslatedCyclerVerifier::Verify (uint32_t SeedDatabaseIndex,
   int32_t FinalTapeHead = Read32 (fp) ;
   uint32_t InitialStepCount = Read32 (fp) ;
   uint32_t FinalStepCount = Read32 (fp) ;
-  uint32_t MatchLength = Read32 (fp) ;
+  int32_t MatchLength = Read32 (fp) ;
 
   // Perform some sanity checks on the data
   if (ExpectedLeftmost > 0)
     printf ("%d: Error: Leftmost = %d is positive\n", SeedDatabaseIndex, ExpectedLeftmost), exit (1) ;
   if (ExpectedRightmost < 0)
     printf ("%d: Error: Rightmost = %d is negative\n", SeedDatabaseIndex, ExpectedRightmost), exit (1) ;
-  if (FinalState == 0 || FinalState > 5)
+  if (FinalState == 0 || FinalState > MachineStates)
     printf ("%d: Invalid Final State %d\n", SeedDatabaseIndex, FinalState), exit (1) ;
   if (InitialTapeHead < ExpectedLeftmost || InitialTapeHead > ExpectedRightmost)
     printf ("%d: Invalid InitialTapeHead out of bounds\n", SeedDatabaseIndex), exit (1) ;
@@ -161,7 +153,7 @@ void TranslatedCyclerVerifier::Verify (uint32_t SeedDatabaseIndex,
   if (FinalStepCount > MaxSteps) MaxSteps = FinalStepCount ;
   if (ExpectedLeftmost < MinLeftmost) MinLeftmost = ExpectedLeftmost ;
   if (ExpectedRightmost > MaxRightmost) MaxRightmost = ExpectedRightmost ;
-  if (MatchLength > MaxMatchLength) MaxMatchLength = MatchLength ;
+  if (MatchLength > (int32_t)MaxMatchLength) MaxMatchLength = MatchLength ;
   if (FinalStepCount - InitialStepCount > MaxPeriod) MaxPeriod = FinalStepCount - InitialStepCount ;
   if (FinalTapeHead - InitialTapeHead > (int)MaxShift) MaxShift = FinalTapeHead - InitialTapeHead ;
 
@@ -260,19 +252,10 @@ void CommandLineParams::Parse (int argc, char** argv)
 
   for (argc--, argv++ ; argc ; argc--, argv++)
     {
+    if (CommonParams::ParseParam (argv[0])) continue ;
     if (argv[0][0] != '-') printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
     switch (toupper (argv[0][1]))
       {
-      case 'D':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        SeedDatabaseFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'V':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        VerificationFile = std::string (&argv[0][2]) ;
-        break ;
-
       case 'S':
         SpaceLimit = atoi (&argv[0][2]) ;
         break ;
@@ -283,16 +266,15 @@ void CommandLineParams::Parse (int argc, char** argv)
       }
     }
 
-  if (VerificationFile.empty()) printf ("Verification file not specified\n"), PrintHelpAndExit (1) ;
+  if (VerificationFilename.empty()) printf ("Verification file not specified\n"), PrintHelpAndExit (1) ;
   }
 
 void CommandLineParams::PrintHelpAndExit (int status)
   {
+  printf ("VerifyCyclers <param> <param>...") ;
+  PrintHelp() ;
   printf (R"*RAW*(
-VerifyCyclers <param> <param>...
-  <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
-           -V<verification file>  Decider Verification File for decided machines
-           -S<space limit>        Max absolute value of tape head (default 50000)
+           -S<space limit>       Max absolute value of tape head (default 50000)\n") ;
 )*RAW*") ;
   exit (status) ;
   }

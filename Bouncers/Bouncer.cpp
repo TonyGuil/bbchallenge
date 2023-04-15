@@ -30,7 +30,7 @@ void Bouncer::CheckTape (const TuringMachine* TM, const TapeDescriptor& TD)
   if (TP.WallOffset + TD.TapeHeadOffset != TM -> TapeHead) TM_ERROR() ;
   }
 
-void Bouncer::CheckTransition (const Transition& Tr) const
+void Bouncer::CheckTransition (const SegmentTransition& Tr) const
   {
   // Initial and Final tapes must be the same size
   if (Tr.Initial.Tape.size() != Tr.Final.Tape.size()) TM_ERROR() ;
@@ -61,12 +61,12 @@ void Bouncer::CheckTransition (const Transition& Tr) const
 
     uint8_t Cell = Tape[TapeHead] ;
     if (Cell > 1) TM_ERROR() ;
-    const StateDesc& S = TM[State][Cell] ;
+    const Transition& S = TM[State][Cell] ;
     Tape[TapeHead] = S.Write ;
     if (S.Move) TapeHead-- ;
     else TapeHead++ ;
     State = S.Next ;
-    if (State < 1 || State > 5) TM_ERROR() ;
+    if (State < 1 || State > MachineStates) TM_ERROR() ;
     }
 
   // Now we should have reached Tr.Final
@@ -111,7 +111,7 @@ void Bouncer::CheckFollowOn (const Segment& Seg1, const Segment& Seg2)
   }
 
 // void Bouncer::CheckWallTransition (TapeDescriptor TD0,
-//   TapeDescriptor TD1, const Transition& Tr)
+//   TapeDescriptor TD1, const SegmentTransition& Tr)
 //
 // Check that Tr transforms tape TD0 into tape TD1
 //
@@ -119,7 +119,7 @@ void Bouncer::CheckFollowOn (const Segment& Seg1, const Segment& Seg2)
 // are free to modify them here
 
 void Bouncer::CheckWallTransition (TapeDescriptor TD0,
-  TapeDescriptor TD1, const Transition& Tr)
+  TapeDescriptor TD1, const SegmentTransition& Tr)
   {
   // Preliminary checks
   if (TD0.State != Tr.Initial.State) TM_ERROR() ;
@@ -140,10 +140,10 @@ void Bouncer::CheckWallTransition (TapeDescriptor TD0,
   uint32_t Wall = TD0.TapeHeadWall ;
   if (TD1.TapeHeadWall != Wall) TM_ERROR() ;
 
-  // Check that the Transition's initial configuration is compatible with the TD0 tape
+  // Check that the SegmentTransition's initial configuration is compatible with the TD0 tape
   CheckSegment (TD0, Tr.Initial, Wall) ;
 
-  // Check that the Transition's final configuration is compatible with the TD1 tape
+  // Check that the SegmentTransition's final configuration is compatible with the TD1 tape
   CheckSegment (TD1, Tr.Final, Wall) ;
 
   // Check that TD0, overwritten with Tr.Final.Tape, generates the
@@ -163,7 +163,7 @@ void Bouncer::CheckWallTransition (TapeDescriptor TD0,
   // Tr.Final.Tape doesn't spill over to the right
   ExpandWallsRightward (TD0, TD1, Wall, Tr.Final.Tape.size() - WallRightmost) ;
 
-  // Insert the Transition's final tape into TD0
+  // Insert the SegmentTransition's final tape into TD0
   if (TD0.TapeHeadOffset < Tr.Initial.TapeHead) TM_ERROR() ;
   if (TD0.TapeHeadOffset - Tr.Initial.TapeHead + Tr.Final.Tape.size() > TD0.Wall[Wall].size())
     TM_ERROR() ;
@@ -177,12 +177,12 @@ void Bouncer::CheckWallTransition (TapeDescriptor TD0,
   }
 
 // void Bouncer::CheckRepeaterTransition (const TapeDescriptor& TD0,
-//   const TapeDescriptor& TD1, const Transition& Tr)
+//   const TapeDescriptor& TD1, const SegmentTransition& Tr)
 //
 // Check that Tr transforms tape TD0 into tape TD1
 
 void Bouncer::CheckRepeaterTransition (const TapeDescriptor& TD0,
-  const TapeDescriptor& TD1, const Transition& Tr)
+  const TapeDescriptor& TD1, const SegmentTransition& Tr)
   {
   // Preliminary checks
   if (TD0.State != Tr.Initial.State) TM_ERROR() ;
@@ -202,10 +202,10 @@ void Bouncer::CheckRepeaterTransition (const TapeDescriptor& TD0,
   if (Len0 != Len1)
     TM_ERROR() ;
 
-  // Check that the Transition's initial configuration is compatible with the TD0 tape
+  // Check that the SegmentTransition's initial configuration is compatible with the TD0 tape
   CheckSegment (TD0, Tr.Initial, TD0.TapeHeadWall) ;
 
-  // Check that the Transition's final configuration is compatible with the TD1 tape
+  // Check that the SegmentTransition's final configuration is compatible with the TD1 tape
   CheckSegment (TD1, Tr.Final, TD1.TapeHeadWall) ;
 
   // Check the inductive step
@@ -215,12 +215,12 @@ void Bouncer::CheckRepeaterTransition (const TapeDescriptor& TD0,
   else CheckRightwardRepeater (TD0, TD1, Tr) ;
   }
 
-// void Bouncer::CheckLeftwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const Transition& Tr)
+// void Bouncer::CheckLeftwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const SegmentTransition& Tr)
 //
 // Note that TD0 and TD1 are passed by value, not by reference; so we
 // are free to modify them here
 
-void Bouncer::CheckLeftwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const Transition& Tr)
+void Bouncer::CheckLeftwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const SegmentTransition& Tr)
   {
   if (TD0.State != Tr.Initial.State) TM_ERROR() ;
   TD0.State = Tr.Final.State ;
@@ -271,12 +271,12 @@ void Bouncer::CheckLeftwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, con
   CheckTapesEquivalent (TD0, TD1) ;
   }
 
-// void Bouncer::CheckRightwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const Transition& Tr)
+// void Bouncer::CheckRightwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const SegmentTransition& Tr)
 //
 // Note that TD0 and TD1 are passed by value, not by reference; so we
 // are free to modify them here
 
-void Bouncer::CheckRightwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const Transition& Tr)
+void Bouncer::CheckRightwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const SegmentTransition& Tr)
   {
   if (TD0.State != Tr.Initial.State) TM_ERROR() ;
   TD0.State = Tr.Final.State ;
@@ -311,7 +311,16 @@ void Bouncer::CheckRightwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, co
     if (Tr.Initial.Tape[i] != Rep[i - A.size()]) TM_ERROR() ;
 
   // Remove A from Wall
-  Wall.resize (Wall.size() - A.size()) ;
+  //
+  // Wall.resize (Wall.size() - A.size()) ;
+  //
+  // This triggers a spurious compiler warning with -std=c++20/c++23:
+  //   warning: 'void* __builtin_memset(void*, int, long long unsigned int)'
+  //   specified bound between 18446744069414584320 and 18446744073709551614 exceeds
+  //   maximum object size 9223372036854775807 [-Wstringop-overflow=]
+  //
+  // So...
+  Wall.resize (uint32_t(Wall.size() - A.size())) ;
 
   // Replace Rep with the first Stride bytes of Tr.Final.Tape
   Rep = std::vector<uint8_t> (Tr.Final.Tape.begin(), Tr.Final.Tape.begin() + Stride) ;
@@ -487,7 +496,8 @@ void Bouncer::CheckTapesEquivalent (const TapeDescriptor& TD0, const TapeDescrip
     TapeHead1 += TD1.RepeaterCount[i] * TD1.Repeater[i].size() ;
     Overlap = std::min (TapeHead0, TapeHead1) - Overlap ;
 
-    if (Overlap < (int)TD0.Repeater[i].size()) TM_ERROR() ;
+    if (Overlap < (int)TD0.Repeater[i].size())
+      TM_ERROR() ;
     }
 
   TapeHead0 += TD0.Wall[nPartitions].size() - 1 ;

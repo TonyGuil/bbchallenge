@@ -1,10 +1,38 @@
 This is a Decider and Verifier for Bouncers.
 
-- With time limit 100,000, it decides 1,405,967 (91%) of the 1,538,624 machines left undecided by the Backward Reasoning decider, taking about four and a half minutes. The Decider Verification File 100K.dvf and Undecided Machines File 100K.umf are too big to post here; to generate them under Windows, run `Run_100K.bat`.
+To compile with g++ 12.2.0, run Compile.bat.
+To generate umf and dvf files, run Run.bat.
 
-- With time limit 1,000,000, it finds an additional 43 Bouncers, in about two and a half hours. The results of running `Run_1M.bat` are in 1M.dvf and 1M.umf.
+With parameters -T1000000 -S20000 -B, this Decider takes the 1,538,548 undecided machines from the Translate Cyclers Decider and classifies 1,406,010 machines as non-halting, leaving 132,538 undecided machines. Time (limited to 4 threads): 3.6 hours.
 
-The files ProbableBells.txt and ProbableBells.umf are text and binary dumps of the 18,657 probable bells found in the course of these runs.
+The Verifier verifies these 1,406,010 machines in a time of 36s.
+
+The files ProbableBells.txt and ProbableBells.umf are text and binary dumps of the 18,651 probable bells found in the course of these runs.
+
+Decider
+-------
+DecideBouncers  <param> <param>...
+  <param>: -N<states>            Machine states (5 or 6)
+           -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
+           -V<verification file> Output file: verification data for decided machines
+           -I<input file>        Input file: list of machines to be analysed (default=all machines)
+           -U<undecided file>    Output file: remaining undecided machines
+           -X<test machine>      Machine to test
+           -M<machine spec>      Compact machine code (ASCII spec) to test
+           -L<machine limit>     Max no. of machines to test
+           -H<threads>           Number of threads to use
+           -O                    Print trace output
+           -T<time limit>        Max no. of steps
+           -S<space limit>       Max absolute value of tape head
+           -B[<bells-file>]      Output <bells-file>.txt and <bells-file>.umf (default ProbableBells)
+
+Verifier
+--------
+VerifyBouncers <param> <param>...
+  <param>: -N<states>            Machine states (5 or 6)
+           -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
+           -V<verification file> Input file: verification data to be checked
+           -S<space limit>       Max absolute value of tape head
 
 #### Introduction
 

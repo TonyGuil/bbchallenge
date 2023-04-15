@@ -1,14 +1,16 @@
 // HaltingSegments <param> <param>...
-//
-//   <param>: -S<seed database>      Seed database file (defaults to ../SeedDatabase.bin)
-//            -I<input file>         Input file: list of machines to be analysed
-//            -V<verification file>  Output file: verification data for decided machines
-//            -U<undecided file>     Output file: remaining undecided machines
-//            -W<width limit>        Max absolute value of tape head
-//            -M<threads>            Number of threads to run
-//            -X<test machine>       Machine to test
-//            -T                     Print trace output
-//            -L<machine limit>      Max no. of machines to test
+//   <param>: -N<states>            Machine states (5 or 6)
+//            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
+//            -V<verification file> Output file: verification data for decided machines
+//            -I<input file>        Input file: list of machines to be analysed (default=all machines)
+//            -U<undecided file>    Output file: remaining undecided machines
+//            -X<test machine>      Machine to test
+//            -M<machine spec>      Compact machine code (ASCII spec) to test
+//            -L<machine limit>     Max no. of machines to test
+//            -H<threads>           Number of threads to use
+//            -O                    Print trace output
+//            -W<width limit>       Max segment width (must be odd)
+//            -S<stack depth>       Max stack depth (default 10000)
 //
 // The HaltingSegments Decider starts from the HALT state and recursively generates 
 // all possible predecessor states within a given tape window, plus all possible
@@ -25,9 +27,10 @@
 #include <string>
 #include <vector>
 #include <set>
-#include <boost/thread.hpp>
+#include <thread>
 
-#include "../bbchallenge.h"
+#include "../TuringMachine.h"
+#include "../Params.h"
 
 // Number of machines to assign to each thread
 #define DEFAULT_CHUNK_SIZE 256
@@ -48,40 +51,27 @@ static uint32_t ChunkSize = DEFAULT_CHUNK_SIZE ;
 // Command-line parameters
 //
 
-class CommandLineParams
+class CommandLineParams : public DeciderParams
   {
 public:
-  static std::string SeedDatabaseFile ;
-  static std::string InputFile ;
-  static std::string VerificationFile ;
-  static std::string UndecidedFile ;
-  static int WidthLimit ;         static bool WidthLimitPresent ;
-  static uint32_t nThreads ;      static bool nThreadsPresent ;
-  static uint32_t TestMachine ;   static bool TestMachinePresent ;
-  static uint32_t MachineLimit ;  static bool MachineLimitPresent ;
-  static bool TraceOutput ;
-  static void Parse (int argc, char** argv) ;
-  static void PrintHelpAndExit [[noreturn]] (int status) ;
+  int WidthLimit ; bool WidthLimitPresent = false ;
+  uint32_t MaxStackDepth = 10000 ;
+  void Parse (int argc, char** argv) ;
+  void PrintHelpAndExit [[noreturn]] (int status) ;
   } ;
 
-std::string CommandLineParams::SeedDatabaseFile ;
-std::string CommandLineParams::InputFile ;
-std::string CommandLineParams::VerificationFile ;
-std::string CommandLineParams::UndecidedFile ;
-int CommandLineParams::WidthLimit ;         bool CommandLineParams::WidthLimitPresent ;
-uint32_t CommandLineParams::nThreads ;      bool CommandLineParams::nThreadsPresent ;
-uint32_t CommandLineParams::TestMachine ;   bool CommandLineParams::TestMachinePresent ;
-bool CommandLineParams::TraceOutput ;
-uint32_t CommandLineParams::MachineLimit ;  bool CommandLineParams::MachineLimitPresent ;
+static CommandLineParams Params ;
 
 //
 // HaltingSegment class
 //
 
-class HaltingSegment
+class HaltingSegment : public TuringMachineSpec
   {
 public:
-  HaltingSegment (int WidthLimit) : WidthLimit (WidthLimit)
+  HaltingSegment (uint32_t MachineStates, int WidthLimit)
+  : TuringMachineSpec (MachineStates)
+  , WidthLimit (WidthLimit)
     {
     WidthLimit |= 1 ; // Should be odd, but no harm in making sure
 
@@ -89,17 +79,16 @@ public:
     Tape = new uint8_t[WidthLimit + 2] ;
     Tape += (WidthLimit + 1) >> 1 ; // so Tape[0] is in the middle
 
-    // Reserve maximum possible lengths for the backward transition vectors,
+    // Reserve maximum possible lengths for the predecessor vectors,
     // to avoid having to re-allocate them between searches (a mini-
     // optimisation)
-    for (int i = 0 ; i <= NSTATES ; i++)
-      TransitionTable[i].reserve (2 * NSTATES) ;
+    for (uint32_t i = 0 ; i <= MachineStates ; i++)
+      TransitionTable[i].reserve (2 * MachineStates) ;
 
     // Statistics
     MaxDecidingDepth = new uint32_t[WidthLimit + 1] ;
     memset (MaxDecidingDepth, 0, (WidthLimit + 1) * sizeof (uint32_t)) ;
     MaxDecidingDepthMachine = new uint32_t[WidthLimit + 1] ;
-    TotalMatches = 0 ;
 
     MinStat = INT_MAX ;
     MaxStat = INT_MIN ;
@@ -109,27 +98,24 @@ public:
   // Seed Database format:
   bool RunDecider (const uint8_t* MachineSpec) ;
 
-  uint32_t SeedDatabaseIndex ;
   uint8_t* Tape ;
 
-  // Transition struct contains the parameters of a possible predecessor state
-  struct Transition
+  // Predecessor struct contains the parameters of a possible predecessor state
+  struct Predecessor : public Transition
     {
     uint8_t State ;
     uint8_t Read ;
-    uint8_t Write ;
-    uint8_t Move ;
     } ;
 
   void ThreadFunction (int nMachines, const uint32_t* MachineIndexList,
     const uint8_t* MachineSpecList, uint8_t* VerificationEntryList) ;
 
   // Each state can be reached from a number of predecessor states:
-  std::vector<Transition> TransitionTable[NSTATES + 1] ;
+  std::vector<Predecessor> TransitionTable[MAX_MACHINE_STATES + 1] ;
 
   // Possible previous configurations when leaving the segment, depending on tape contents
-  std::vector<Transition> LeftOfSegment[2] ;
-  std::vector<Transition> RightOfSegment[2] ;
+  std::vector<Predecessor> LeftOfSegment[2] ;
+  std::vector<Predecessor> RightOfSegment[2] ;
 
   // The Configuration struct doesn't need to contain the tape contents,
   // because we update the tape dynamically as we recurse
@@ -159,26 +145,26 @@ public:
     ForwardTree* SubTree ;
     } ;
 
-  uint32_t FindShorterOrEqual (const CompoundTree* Tree, const uint8_t* TapeHead) ;
-  CompoundTree* Insert (CompoundTree* Tree, const uint8_t* TapeHead, uint32_t NodeIndex) ;
+  size_t FindShorterOrEqual (const CompoundTree* Tree, const uint8_t* TapeHead) ;
+  CompoundTree* Insert (CompoundTree* Tree, const uint8_t* TapeHead, size_t NodeIndex) ;
 
-  uint32_t FindShorterOrEqual (const ForwardTree* subTree, const uint8_t* TapeHead) ;
-  ForwardTree* Insert (ForwardTree* Tree, const uint8_t* TapeHead, uint32_t NodeIndex) ;
+  size_t FindShorterOrEqual (const ForwardTree* subTree, const uint8_t* TapeHead) ;
+  ForwardTree* Insert (ForwardTree* Tree, const uint8_t* TapeHead, size_t NodeIndex) ;
 
-  uint32_t FindShorterOrEqual (const BackwardTree* subTree, const uint8_t* TapeHead) ;
-  BackwardTree* Insert (BackwardTree* Tree, const uint8_t* TapeHead, uint32_t NodeIndex) ;
+  size_t FindShorterOrEqual (const BackwardTree* subTree, const uint8_t* TapeHead) ;
+  BackwardTree* Insert (BackwardTree* Tree, const uint8_t* TapeHead, size_t NodeIndex) ;
 
   template<class T> bool IsLeafNode (T* Tree)
     {
-    return ((uint32_t)Tree & 1) != 0 ;
+    return ((size_t)Tree & 1) != 0 ;
     }
 
   template<class T> uint32_t TreeAsLeafNode (T* Tree)
     {
-    return (uint32_t)Tree >> 1 ;
+    return (size_t)Tree >> 1 ;
     }
 
-  template<class T> T* LeafNodeAsTree (uint32_t NodeIndex)
+  template<class T> T* LeafNodeAsTree (size_t NodeIndex)
     {
     return (T*)(2 * NodeIndex + 1) ;
     }
@@ -220,7 +206,7 @@ public:
       }
     } ;
 
-  CompoundTree* AlreadySeen[6][2] ;
+  CompoundTree* AlreadySeen[MAX_MACHINE_STATES + 1][2] ;
   ForwardTree* ExitedLeft ;
   BackwardTree* ExitedRight ;
 
@@ -239,8 +225,6 @@ public:
   uint32_t nNodes ;
   uint32_t* MaxDecidingDepth ;
   uint32_t* MaxDecidingDepthMachine ;
-  uint32_t nMatches ;
-  uint32_t TotalMatches ;
 
   // Whatever we may want to know from time to time:
   int MaxStat ; uint32_t MaxStatMachine ;
@@ -249,83 +233,45 @@ public:
 
 int main (int argc, char** argv)
   {
-  CommandLineParams::Parse (argc, argv) ;
+  Params.Parse (argc, argv) ;
 
-  TuringMachineReader Reader (CommandLineParams::SeedDatabaseFile.c_str()) ;
+  Params.CheckParameters() ;
+  Params.OpenFiles() ;
 
-  uint8_t MachineSpec[MACHINE_SPEC_SIZE] ;
-  if (CommandLineParams::TestMachinePresent)
-    {
-    HaltingSegment Decider (CommandLineParams::WidthLimit) ;
-    Decider.SeedDatabaseIndex = CommandLineParams::TestMachine ;
-    Reader.Read (Decider.SeedDatabaseIndex, MachineSpec) ;
-    printf ("%d\n", Decider.RunDecider (MachineSpec)) ;
-    printf ("%d %d\n", Decider.MaxDepth, Decider.nNodes) ;
-    exit (0) ;
-    }
-
-  // fpin contains the list of machines to analyse
-  FILE* fpin = fopen (CommandLineParams::InputFile.c_str(), "rb") ;
-  if (fpin == NULL) printf ("Can't open input file\n"), exit (1) ;
-  if (fseek (fpin, 0, SEEK_END))
-    printf ("fseek failed\n"), exit (1) ;
-  uint32_t InputFileSize = ftell (fpin) ;
-  if (InputFileSize & 3) // Must be a multiple of 4 bytes
-    printf ("Invalid input file %s\n", CommandLineParams::InputFile.c_str()), exit (1) ;
-  if (fseek (fpin, 0, SEEK_SET))
-    printf ("fseek failed\n"), exit (1) ;
-
-  if (!CommandLineParams::nThreadsPresent)
-    {
-    CommandLineParams::nThreads = 4 ;
-    char* env = getenv ("NUMBER_OF_PROCESSORS") ;
-    if (env)
-      {
-      CommandLineParams::nThreads = atoi (env) ;
-      if (CommandLineParams::nThreads == 0) CommandLineParams::nThreads = 4 ;
-      }
-    printf ("nThreads = %d\n", CommandLineParams::nThreads) ;
-    }
-  std::vector<boost::thread*> ThreadList (CommandLineParams::nThreads) ;
-
-  uint32_t nMachines = InputFileSize >> 2 ;
-  if (CommandLineParams::MachineLimitPresent) nMachines = CommandLineParams::MachineLimit ;
-
-  // Make sure the progress indicator updates reasonably often
-  if (CommandLineParams::nThreads * ChunkSize * 50 > nMachines)
-    ChunkSize = 1 + nMachines / (50 * CommandLineParams::nThreads) ;
-
-  FILE* fpUndecided = 0 ;
-  if (!CommandLineParams::UndecidedFile.empty())
-    {
-    fpUndecided = fopen (CommandLineParams::UndecidedFile.c_str(), "wb") ;
-    if (fpUndecided == NULL)
-      printf ("Can't open output file \"%s\"\n", CommandLineParams::UndecidedFile.c_str()), exit (1) ;
-    }
-
-  FILE* fpVerif = 0 ;
-  if (!CommandLineParams::VerificationFile.empty())
-    {
-    fpVerif = fopen (CommandLineParams::VerificationFile.c_str(), "wb") ;
-    if (fpVerif == NULL)
-      printf ("Can't open output file \"%s\"\n", CommandLineParams::VerificationFile.c_str()), exit (1) ;
-    }
+  TuringMachineReader Reader (&Params) ;
 
   // Write dummy dvf header
-  Write32 (fpVerif, 0) ;
+  Write32 (Params.fpVerify, 0) ;
+
+  if (!Params.nThreadsPresent)
+    {
+    if (Reader.SingleEntry) Params.nThreads = 1 ;
+    else
+      {
+      Params.nThreads = 4 ;
+      char* env = getenv ("NUMBER_OF_PROCESSORS") ;
+      if (env)
+        {
+        Params.nThreads = atoi (env) ;
+        if (Params.nThreads == 0) Params.nThreads = 4 ;
+        }
+      printf ("nThreads = %d\n", Params.nThreads) ;
+      }
+    }
+  std::vector<std::thread*> ThreadList (Params.nThreads) ;
 
   clock_t Timer = clock() ;
 
-  HaltingSegment** DeciderArray = new HaltingSegment*[CommandLineParams::nThreads] ;
-  uint32_t** MachineIndexList = new uint32_t*[CommandLineParams::nThreads] ;
-  uint8_t** MachineSpecList = new uint8_t*[CommandLineParams::nThreads] ;
-  uint8_t** VerificationEntryList = new uint8_t*[CommandLineParams::nThreads] ;
-  uint32_t* ChunkSizeArray = new uint32_t[CommandLineParams::nThreads] ;
-  for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
+  HaltingSegment** DeciderArray = new HaltingSegment*[Params.nThreads] ;
+  uint32_t** MachineIndexList = new uint32_t*[Params.nThreads] ;
+  uint8_t** MachineSpecList = new uint8_t*[Params.nThreads] ;
+  uint8_t** VerificationEntryList = new uint8_t*[Params.nThreads] ;
+  uint32_t* ChunkSizeArray = new uint32_t[Params.nThreads] ;
+  for (uint32_t i = 0 ; i < Params.nThreads ; i++)
     {
-    DeciderArray[i] = new HaltingSegment (CommandLineParams::WidthLimit) ;
+    DeciderArray[i] = new HaltingSegment (Params.MachineStates, Params.WidthLimit) ;
     MachineIndexList[i] = new uint32_t[ChunkSize] ;
-    MachineSpecList[i] = new uint8_t[MACHINE_SPEC_SIZE * ChunkSize] ;
+    MachineSpecList[i] = new uint8_t[Reader.MachineSpecSize * ChunkSize] ;
     VerificationEntryList[i] = new uint8_t[VERIF_ENTRY_LENGTH * ChunkSize] ;
     }
 
@@ -335,41 +281,32 @@ int main (int argc, char** argv)
   uint32_t nCompleted = 0 ;
   int LastPercent = -1 ;
 
-  // Default thread stack size is 2 megabytes, but we need more:
-  boost::thread::attributes ThreadAttributes ;
-  ThreadAttributes.set_stack_size (0x2000000) ; // 32 megabytes
-
-  while (nCompleted < nMachines)
+  while (nCompleted < Reader.nMachines)
     {
-    uint32_t nRemaining = nMachines - nCompleted ;
-    if (nRemaining >= CommandLineParams::nThreads * ChunkSize)
+    uint32_t nRemaining = Reader.nMachines - nCompleted ;
+    if (nRemaining >= Params.nThreads * ChunkSize)
       {
-      for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++) ChunkSizeArray[i] = ChunkSize ;
+      for (uint32_t i = 0 ; i < Params.nThreads ; i++) ChunkSizeArray[i] = ChunkSize ;
       }
     else
       {
-      for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
+      for (uint32_t i = 0 ; i < Params.nThreads ; i++)
         {
-        ChunkSizeArray[i] = nRemaining / (CommandLineParams::nThreads - i) ;
+        ChunkSizeArray[i] = nRemaining / (Params.nThreads - i) ;
         nRemaining -= ChunkSizeArray[i] ;
         }
       }
 
-    std::vector<boost::thread*> ThreadList (CommandLineParams::nThreads) ;
-    for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
+    for (uint32_t i = 0 ; i < Params.nThreads ; i++)
       {
       for (uint32_t j = 0 ; j < ChunkSizeArray[i] ; j++)
-        {
-        MachineIndexList[i][j] = Read32 (fpin) ;
-        Reader.Read (MachineIndexList[i][j], MachineSpecList[i] + j * MACHINE_SPEC_SIZE) ;
-        }
+        MachineIndexList[i][j] = Reader.Next (MachineSpecList[i] + j * Reader.MachineSpecSize) ;
 
-      ThreadList[i] = new boost::thread (ThreadAttributes, boost::bind (
-        &HaltingSegment::ThreadFunction, DeciderArray[i], ChunkSizeArray[i],
-        MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i])) ;
+      ThreadList[i] = new std::thread (&HaltingSegment::ThreadFunction, DeciderArray[i],
+        ChunkSizeArray[i], MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i]) ;
       }
 
-    for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
+    for (uint32_t i = 0 ; i < Params.nThreads ; i++)
       {
       // Wait for thread i to finish
       ThreadList[i] -> join() ;
@@ -381,20 +318,20 @@ int main (int argc, char** argv)
         {
         if (Load32 (VerificationEntry + 4))
           {
-          if (fpVerif && fwrite (VerificationEntry, VERIF_ENTRY_LENGTH, 1, fpVerif) != 1)
+          if (Params.fpVerify && fwrite (VerificationEntry, VERIF_ENTRY_LENGTH, 1, Params.fpVerify) != 1)
             printf ("Error writing file\n"), exit (1) ;
           nDecided++ ;
           if (MachineIndexList[i][j] < Reader.nTimeLimited) nTimeLimitedDecided++ ;
           else nSpaceLimitedDecided++ ;
           }
-        else Write32 (fpUndecided, MachineIndexList[i][j]) ;
-        MachineSpec += MACHINE_SPEC_SIZE ;
+        else Write32 (Params.fpUndecided, MachineIndexList[i][j]) ;
+        MachineSpec += Reader.MachineSpecSize ;
         VerificationEntry += VERIF_ENTRY_LENGTH ;
         nCompleted++ ;
         }
       }
 
-    int Percent = (nCompleted * 100LL) / nMachines ;
+    int Percent = (nCompleted * 100LL) / Reader.nMachines ;
     if (Percent != LastPercent)
       {
       LastPercent = Percent ;
@@ -404,29 +341,29 @@ int main (int argc, char** argv)
     }
   printf ("\n") ;
 
-  if (fpUndecided) fclose (fpUndecided) ;
-  fclose (fpin) ;
+  if (Params.fpUndecided) fclose (Params.fpUndecided) ;
+  fclose (Params.fpInput) ;
 
-  if (fpVerif)
+  if (Params.fpVerify)
     {
     // Write the verification file header
-    if (fseek (fpVerif, 0 , SEEK_SET))
+    if (fseek (Params.fpVerify, 0 , SEEK_SET))
       printf ("\nfseek failed\n"), exit (1) ;
-    Write32 (fpVerif, nDecided) ;
-    fclose (fpVerif) ;
+    Write32 (Params.fpVerify, nDecided) ;
+    fclose (Params.fpVerify) ;
     }
 
   Timer = clock() - Timer ;
 
-  printf ("\nDecided %d out of %d\n", nDecided, nMachines) ;
+  printf ("\nDecided %d out of %d\n", nDecided, Reader.nMachines) ;
   printf ("Elapsed time %.3f\n", (double)Timer / CLOCKS_PER_SEC) ;
 
   printf ("\nMax search depth for decided machines by segment width:\n") ;
-  for (int HalfWidth = 1 ; 2 * HalfWidth + 1 <= CommandLineParams::WidthLimit ; HalfWidth++)
+  for (int HalfWidth = 1 ; 2 * HalfWidth + 1 <= Params.WidthLimit ; HalfWidth++)
     {
     uint32_t Max = 0 ;
     uint32_t MaxMachineIndex ;
-    for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
+    for (uint32_t i = 0 ; i < Params.nThreads ; i++)
       if (DeciderArray[i] -> MaxDecidingDepth[HalfWidth] > Max)
         {
         Max = DeciderArray[i] -> MaxDecidingDepth[HalfWidth] ;
@@ -435,16 +372,11 @@ int main (int argc, char** argv)
     if (Max) printf ("%d: %d (#%d)\n", 2 * HalfWidth + 1, Max, MaxMachineIndex) ;
     }
 
-  uint32_t TotalMatches = 0 ;
-  for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
-    TotalMatches += DeciderArray[i] -> TotalMatches ;
-  printf ("Total matches = %d\n", TotalMatches) ;
-
   int MinStat = INT_MAX ;
   uint32_t MinStatMachine = 0 ;
   int MaxStat = INT_MIN ;
   uint32_t MaxStatMachine = 0 ;
-  for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
+  for (uint32_t i = 0 ; i < Params.nThreads ; i++)
     {
     if (DeciderArray[i] -> MaxStat > MaxStat)
       {
@@ -480,14 +412,14 @@ void HaltingSegment::ThreadFunction (int nMachines, const uint32_t* MachineIndex
       }
     else Save32 (VerificationEntryList + 4, uint32_t (DeciderTag::NONE)) ;
 
-    MachineSpecList += MACHINE_SPEC_SIZE ;
+    MachineSpecList += MachineSpecSize ;
     VerificationEntryList += VERIF_ENTRY_LENGTH ;
     }
   }
 
 bool HaltingSegment::RunDecider (const uint8_t* MachineSpec)
   {
-  for (int i = 0 ; i <= NSTATES ; i++) TransitionTable[i].clear() ;
+  for (uint32_t i = 0 ; i <= MachineStates ; i++) TransitionTable[i].clear() ;
 
   for (int i = 0 ; i <= 1 ; i++)
     {
@@ -496,26 +428,26 @@ bool HaltingSegment::RunDecider (const uint8_t* MachineSpec)
     }
 
   // Build the backward transition table from the MachineSpec
-  for (uint8_t State = 1 ; State <= NSTATES ; State++)
+  for (uint8_t State = 1 ; State <= MachineStates ; State++)
+    {
     for (uint8_t Cell = 0 ; Cell <= 1 ; Cell++)
       {
-      Transition T ;
+      Predecessor T ;
+      UnpackSpec (&T, MachineSpec) ;
+      MachineSpec += 3 ;
       T.State = State ;
       T.Read = Cell ;
-      T.Write = *MachineSpec++ ;
-      T.Move = *MachineSpec++ ;
-      uint8_t Next = *MachineSpec++ ;
+      TransitionTable[T.Next].push_back (T) ;
 
-      TransitionTable[Next].push_back (T) ;
-
-      if (Next != 0)
+      if (T.Next != 0)
         {
         if (T.Move) LeftOfSegment[T.Write].push_back (T) ;
         else RightOfSegment[T.Write].push_back (T) ;
         }
       }
+    }
 
-  for (HalfWidth = 1 ; 2 * HalfWidth + 1 <= CommandLineParams::WidthLimit ; HalfWidth++)
+  for (HalfWidth = 1 ; 2 * HalfWidth + 1 <= Params.WidthLimit ; HalfWidth++)
     {
     // Start in state 0 with unspecified tape
     memset (Tape - HalfWidth, TAPE_ANY, 2 * HalfWidth + 1) ;
@@ -533,7 +465,6 @@ bool HaltingSegment::RunDecider (const uint8_t* MachineSpec)
 
     MaxDepth = nNodes = 0 ;
     Leftmost = Rightmost = 0 ;
-    nMatches = 0 ;
 
     if (Recurse (0, StartConfig))
       {
@@ -542,12 +473,6 @@ bool HaltingSegment::RunDecider (const uint8_t* MachineSpec)
         MaxDecidingDepth[HalfWidth] = MaxDepth ;
         MaxDecidingDepthMachine[HalfWidth] = SeedDatabaseIndex ;
         }
-      if ((int)nMatches > MaxStat)
-        {
-        MaxStat = nMatches ;
-        MaxStatMachine = SeedDatabaseIndex ;
-        }
-      TotalMatches += nMatches ;
       return true ;
       }
     }
@@ -569,7 +494,7 @@ bool HaltingSegment::Recurse (uint32_t Depth, const Configuration& Config)
   if (Depth != 0)
     {
     nNodes++ ;
-    if (CommandLineParams::TraceOutput)
+    if (Params.TraceOutput)
       {
       printf ("State: %c ; ", Config.State + '@') ;
       for (int i = -HalfWidth - 1 ; i <= (int)HalfWidth + 1 ; i++)
@@ -584,7 +509,7 @@ bool HaltingSegment::Recurse (uint32_t Depth, const Configuration& Config)
 
   if (++Depth > MaxDepth) 
    {
-   if (Depth > 150000) return false ;
+   if (Depth > Params.MaxStackDepth) return false ;
    MaxDepth = Depth ;
    }
 
@@ -679,7 +604,7 @@ bool HaltingSegment::ExitSegmentLeft (uint32_t Depth, uint8_t State)
 
   nNodes++ ;
 
-  if (CommandLineParams::TraceOutput)
+  if (Params.TraceOutput)
     {
     printf ("State: * ; [_]") ;
     for (int i = -HalfWidth ; i <= (int)HalfWidth ; i++)
@@ -721,7 +646,7 @@ bool HaltingSegment::ExitSegmentRight (uint32_t Depth, uint8_t State)
 
   nNodes++ ;
 
-  if (CommandLineParams::TraceOutput)
+  if (Params.TraceOutput)
     {
     printf ("State: * ;  _") ;
     for (int i = -HalfWidth ; i <= (int)HalfWidth ; i++)
@@ -750,12 +675,12 @@ bool HaltingSegment::ExitSegmentRight (uint32_t Depth, uint8_t State)
   return true ;
   }
 
-uint32_t HaltingSegment::FindShorterOrEqual (const CompoundTree* Tree, const uint8_t* TapeHead)
+size_t HaltingSegment::FindShorterOrEqual (const CompoundTree* Tree, const uint8_t* TapeHead)
   {
   if (Tree == nullptr) return 0 ;
   for (const uint8_t* p = TapeHead - 1 ; Tree ; p--)
     {
-    uint32_t NodeIndex = FindShorterOrEqual (Tree -> SubTree, TapeHead + 1) ;
+    size_t NodeIndex = FindShorterOrEqual (Tree -> SubTree, TapeHead + 1) ;
     if (NodeIndex) return NodeIndex ;
     if (*p > 1) return 0 ;
     Tree = Tree -> Next[*p] ;
@@ -763,7 +688,7 @@ uint32_t HaltingSegment::FindShorterOrEqual (const CompoundTree* Tree, const uin
   return 0 ;
   }
 
-HaltingSegment::CompoundTree* HaltingSegment::Insert (CompoundTree* Tree, const uint8_t* TapeHead, uint32_t NodeIndex)
+HaltingSegment::CompoundTree* HaltingSegment::Insert (CompoundTree* Tree, const uint8_t* TapeHead, size_t NodeIndex)
   {
   if (Tree == 0)
     {
@@ -786,7 +711,7 @@ HaltingSegment::CompoundTree* HaltingSegment::Insert (CompoundTree* Tree, const 
   return Tree ;
   }
 
-uint32_t HaltingSegment::FindShorterOrEqual (const ForwardTree* Tree, const uint8_t* TapeHead)
+size_t HaltingSegment::FindShorterOrEqual (const ForwardTree* Tree, const uint8_t* TapeHead)
   {
   // Tree = 0 means no entries here:
   if (Tree == 0) return 0 ;
@@ -803,7 +728,7 @@ uint32_t HaltingSegment::FindShorterOrEqual (const ForwardTree* Tree, const uint
     }
   }
 
-HaltingSegment::ForwardTree* HaltingSegment::Insert (ForwardTree* Tree, const uint8_t* TapeHead, uint32_t NodeIndex)
+HaltingSegment::ForwardTree* HaltingSegment::Insert (ForwardTree* Tree, const uint8_t* TapeHead, size_t NodeIndex)
   {
   if (*TapeHead > 1) return LeafNodeAsTree<ForwardTree> (NodeIndex) ; // Empty string
 
@@ -835,7 +760,7 @@ HaltingSegment::ForwardTree* HaltingSegment::Insert (ForwardTree* Tree, const ui
     }
   }
 
-uint32_t HaltingSegment::FindShorterOrEqual (const BackwardTree* Tree, const uint8_t* TapeHead)
+size_t HaltingSegment::FindShorterOrEqual (const BackwardTree* Tree, const uint8_t* TapeHead)
   {
   // Tree = 0 means no entries here:
   if (Tree == 0) return 0 ;
@@ -852,7 +777,7 @@ uint32_t HaltingSegment::FindShorterOrEqual (const BackwardTree* Tree, const uin
     }
   }
 
-HaltingSegment::BackwardTree* HaltingSegment::Insert (BackwardTree* Tree, const uint8_t* TapeHead, uint32_t NodeIndex)
+HaltingSegment::BackwardTree* HaltingSegment::Insert (BackwardTree* Tree, const uint8_t* TapeHead, size_t NodeIndex)
   {
   if (*TapeHead > 1) return LeafNodeAsTree<BackwardTree> (NodeIndex) ; // Empty string
 
@@ -890,52 +815,18 @@ void CommandLineParams::Parse (int argc, char** argv)
 
   for (argc--, argv++ ; argc ; argc--, argv++)
     {
+    if (DeciderParams::ParseParam (argv[0])) continue ;
     if (argv[0][0] != '-') printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
     switch (toupper (argv[0][1]))
       {
-      case 'S':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        SeedDatabaseFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'I':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        InputFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'V':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        VerificationFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'U':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        UndecidedFile = std::string (&argv[0][2]) ;
-        break ;
-
       case 'W':
         WidthLimit = atoi (&argv[0][2]) ;
         if (!(WidthLimit & 1)) printf ("Segment width limit must be odd\n"), exit (1) ;
         WidthLimitPresent = true ;
         break ;
 
-      case 'M':
-        nThreads = atoi (&argv[0][2]) ;
-        nThreadsPresent = true ;
-        break ;
-
-      case 'X':
-        TestMachine = atoi (&argv[0][2]) ;
-        TestMachinePresent = true ;
-        break ;
-
-      case 'T':
-        TraceOutput = true ;
-        break ;
-
-      case 'L':
-        MachineLimit = atoi (&argv[0][2]) ;
-        MachineLimitPresent = true ;
+      case 'S':
+        MaxStackDepth = atoi (&argv[0][2]) ;
         break ;
 
       default:
@@ -944,25 +835,16 @@ void CommandLineParams::Parse (int argc, char** argv)
       }
     }
 
-  if (!TestMachinePresent && InputFile.empty())
-    printf ("Input file not specified\n"), PrintHelpAndExit (1) ;
-
   if (!WidthLimitPresent) printf ("Width limit not specified\n"), PrintHelpAndExit (1) ;
   }
 
 void CommandLineParams::PrintHelpAndExit (int status)
   {
+  printf ("HaltingSegments <param> <param>...") ;
+  DeciderParams::PrintHelp() ;
   printf (R"*RAW*(
-HaltingSegments <param> <param>...
-  <param>: -S<seed database>      Seed database file (defaults to ../SeedDatabase.bin)
-           -I<input file>         Input file: list of machines to be analysed
-           -V<verification file>  Output file: verification data for decided machines
-           -U<undecided file>     Output file: remaining undecided machines
-           -W<width limit>        Max segment width (must be odd)
-           -M<threads>            Number of threads to run
-           -X<test machine>       Machine to test
-           -T                     Print trace output
-           -L<machine limit>      Max no. of machines to test
+           -W<width limit>       Max segment width (must be odd)
+           -S<stack depth>       Max stack depth
 )*RAW*") ;
   exit (status) ;
   }

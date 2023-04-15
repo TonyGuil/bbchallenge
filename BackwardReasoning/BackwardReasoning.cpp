@@ -1,10 +1,15 @@
 // BackwardReasoning <param> <param>...
-//
-//   <param>: -S<seed database>      Seed database file (defaults to ../SeedDatabase.bin)
-//            -I<input file>         Input file: list of machines to be analysed
-//            -V<verification file>  Output file: verification data for decided machines
-//            -U<undecided file>     Output file: remaining undecided machines
-//            -D<depth limit>        Max search depth
+//   <param>: -N<states>            Machine states (5 or 6)
+//            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
+//            -V<verification file> Output file: verification data for decided machines
+//            -I<input file>        Input file: list of machines to be analysed (default=all machines)
+//            -U<undecided file>    Output file: remaining undecided machines
+//            -X<test machine>      Machine to test
+//            -M<machine spec>      Compact machine code (ASCII spec) to test
+//            -L<machine limit>     Max no. of machines to test
+//            -H<threads>           Number of threads to use
+//            -O                    Print trace output
+//            -S<depth limit>        Max search depth
 //
 // The Backward Reasoning Decider starts from the HALT state and recursively generates 
 // all possible predecessor states. If it can determine that all possible states lie
@@ -24,7 +29,8 @@
 #include <string>
 #include <vector>
 
-#include "../bbchallenge.h"
+#include "../TuringMachine.h"
+#include "../Params.h"
 
 // This Decider can't offer much in the way of verification data. It just saves
 // Leftmost, Rightmost, MaxDepth, and nNodes. No verifier program has been written:
@@ -38,64 +44,54 @@
 // Command-line parameters
 //
 
-class CommandLineParams
+class CommandLineParams : public DeciderParams
   {
 public:
-  static std::string SeedDatabaseFile ;
-  static std::string InputFile ;
-  static std::string VerificationFile ;
-  static std::string UndecidedFile ;
-  static uint32_t DepthLimit ;    static bool DepthLimitPresent ;
-  static void Parse (int argc, char** argv) ;
-  static void PrintHelpAndExit [[noreturn]] (int status) ;
+  uint32_t DepthLimit ; bool DepthLimitPresent = false ;
+  void Parse (int argc, char** argv) ;
+  void PrintHelpAndExit [[noreturn]] (int status) ;
   } ;
 
-std::string CommandLineParams::SeedDatabaseFile ;
-std::string CommandLineParams::InputFile ;
-std::string CommandLineParams::VerificationFile ;
-std::string CommandLineParams::UndecidedFile ;
-uint32_t CommandLineParams::DepthLimit ;    bool CommandLineParams::DepthLimitPresent ;
+static CommandLineParams Params ;
 
 //
 // BackwardReasoning class
 //
 
-class BackwardReasoning
+class BackwardReasoning : public TuringMachineSpec
   {
 public:
-  BackwardReasoning (int DepthLimit, int SpaceLimit)
-  : DepthLimit (DepthLimit), SpaceLimit (SpaceLimit)
+  BackwardReasoning (int MachineStates, int DepthLimit, int SpaceLimit)
+  : TuringMachineSpec (MachineStates)
+  , DepthLimit (DepthLimit)
+  , SpaceLimit (SpaceLimit)
     {
     // Allocate the tape workspace
     Tape = new uint8_t[2 * SpaceLimit + 1] ;
     Tape[0] = Tape[2 * SpaceLimit] = TAPE_SENTINEL ;
     Tape += SpaceLimit ; // so Tape[0] is in the middle
 
-    // Reserve maximum possible lengths for the backward transition vectors,
+    // Reserve maximum possible lengths for the predecessor vectors,
     // to avoid having to re-allocate them in the middle of the search (a
     // mini-optimisation)
-    for (int i = 0 ; i <= NSTATES ; i++)
-      TransitionTable[i].reserve (2 * NSTATES) ;
+    for (int i = 0 ; i <= MachineStates ; i++)
+      PredecessorTable[i].reserve (2 * MachineStates) ;
     }
 
-  // Call Run to analyse a single machine. MachineSpec is in the 30-byte
-  // Seed Database format:
+  // Call Run to analyse a single machine
   bool Run (const uint8_t* MachineSpec) ;
 
-  uint32_t SeedDatabaseIndex ;
   uint8_t* Tape ;
 
-  // Transition struct contains the parameters of a possible predecessor state
-  struct Transition
+  // Predecessor struct contains the parameters of a possible predecessor state
+  struct Predecessor : public Transition
     {
     uint8_t State ;
     uint8_t Read ;
-    uint8_t Write ;
-    uint8_t Move ;
     } ;
 
   // Each state can be reached from a number of predecessor states:
-  std::vector<Transition> TransitionTable[NSTATES + 1] ;
+  std::vector<Predecessor> PredecessorTable[MAX_MACHINE_STATES + 1] ;
 
   // The Configuration struct doesn't need to contain the tape contents,
   // because we update the tape dynamically as we recurse
@@ -119,70 +115,43 @@ public:
 
 int main (int argc, char** argv)
   {
-  CommandLineParams::Parse (argc, argv) ;
+  Params.Parse (argc, argv) ;
 
-  TuringMachineReader Reader (CommandLineParams::SeedDatabaseFile.c_str()) ;
+  Params.CheckParameters() ;
+  Params.OpenFiles() ;
 
-  // fpin contains the list of machines to analyse
-  FILE* fpin = fopen (CommandLineParams::InputFile.c_str(), "rb") ;
-  if (fpin == NULL) printf ("Can't open input file\n"), exit (1) ;
-  if (fseek (fpin, 0, SEEK_END))
-    printf ("fseek failed\n"), exit (1) ;
-  uint32_t InputFileSize = ftell (fpin) ;
-  if (InputFileSize & 3) // Must be a multiple of 4 bytes
-    printf ("Invalid input file %s\n", CommandLineParams::InputFile.c_str()), exit (1) ;
-  if (fseek (fpin, 0, SEEK_SET))
-    printf ("fseek failed\n"), exit (1) ;
-
-  FILE* fpUndecided = 0 ;
-  if (!CommandLineParams::UndecidedFile.empty())
-    {
-    fpUndecided = fopen (CommandLineParams::UndecidedFile.c_str(), "wb") ;
-    if (fpUndecided == NULL)
-      printf ("Can't open output file \"%s\"\n", CommandLineParams::UndecidedFile.c_str()), exit (1) ;
-    }
-
-  FILE* fpVerif = 0 ;
-  if (!CommandLineParams::VerificationFile.empty())
-    {
-    fpVerif = fopen (CommandLineParams::VerificationFile.c_str(), "wb") ;
-    if (fpVerif == NULL)
-      printf ("Can't open output file \"%s\"\n", CommandLineParams::VerificationFile.c_str()), exit (1) ;
-    }
-
-  uint32_t nMachines = InputFileSize >> 2 ;
+  TuringMachineReader Reader (&Params) ;
 
   // Write dummy dvf header
-  Write32 (fpVerif, 0) ;
+  Write32 (Params.fpVerify, 0) ;
 
   clock_t Timer = clock() ;
 
   uint32_t nDecided = 0 ;
   int LastPercent = -1 ;
-  uint8_t MachineSpec[MACHINE_SPEC_SIZE] ;
+  uint8_t MachineSpec[MAX_MACHINE_SPEC_SIZE] ;
   uint8_t VerificationEntry[VERIF_ENTRY_LENGTH] ;
   Save32 (VerificationEntry + 4, uint32_t (DeciderTag::BACKWARD_REASONING)) ;
   Save32 (VerificationEntry + 8, VERIF_INFO_LENGTH) ;
 
-  BackwardReasoning Decider (CommandLineParams::DepthLimit, MAX_SPACE) ;
-  for (uint32_t Entry = 0 ; Entry < nMachines ; Entry++)
+  BackwardReasoning Decider (Params.MachineStates, Params.DepthLimit, MAX_SPACE) ;
+  for (uint32_t Entry = 0 ; Entry < Reader.nMachines ; Entry++)
     {
-    uint32_t SeedDatabaseIndex = Read32 (fpin) ;
-    Reader.Read (SeedDatabaseIndex, MachineSpec) ;
+    uint32_t MachineIndex = Reader.Next (MachineSpec) ;
     if (Decider.Run (MachineSpec))
       {
-      Save32 (VerificationEntry, SeedDatabaseIndex) ;
+      Save32 (VerificationEntry, MachineIndex) ;
       Save32 (VerificationEntry + 12, Decider.Leftmost) ;
       Save32 (VerificationEntry + 16, Decider.Rightmost) ;
       Save32 (VerificationEntry + 20, Decider.MaxDepth) ;
       Save32 (VerificationEntry + 24, Decider.nNodes) ;
-      if (fpVerif && fwrite (VerificationEntry, VERIF_ENTRY_LENGTH, 1, fpVerif) != 1)
+      if (Params.fpVerify && fwrite (VerificationEntry, VERIF_ENTRY_LENGTH, 1, Params.fpVerify) != 1)
         printf ("Write error\n"), exit (1) ;
       nDecided++ ;
       }
-    else Write32 (fpUndecided, SeedDatabaseIndex) ;
+    else Write32 (Params.fpUndecided, MachineIndex) ;
 
-    int Percent = ((Entry + 1) * 100LL) / nMachines ;
+    int Percent = ((Entry + 1) * 100LL) / Reader.nMachines ;
     if (Percent != LastPercent)
       {
       LastPercent = Percent ;
@@ -192,40 +161,43 @@ int main (int argc, char** argv)
     }
   printf ("\n") ;
 
-  if (fpUndecided) fclose (fpUndecided) ;
+  if (Params.fpUndecided) fclose (Params.fpUndecided) ;
 
-  if (fpVerif)
+  if (Params.fpVerify)
     {
     // Write the verification file header
-    if (fseek (fpVerif, 0 , SEEK_SET))
+    if (fseek (Params.fpVerify, 0 , SEEK_SET))
       printf ("\nfseek failed\n"), exit (1) ;
-    Write32 (fpVerif, nDecided) ;
-    fclose (fpVerif) ;
+    Write32 (Params.fpVerify, nDecided) ;
+    fclose (Params.fpVerify) ;
     }
-  fclose (fpin) ;
+  if (Params.fpInput) fclose (Params.fpInput) ;
 
   Timer = clock() - Timer ;
 
-  printf ("\nDecided %d out of %d\n", nDecided, nMachines) ;
+  printf ("\nDecided %d out of %d\n", nDecided, Reader.nMachines) ;
   printf ("Elapsed time %.3f\n", (double)Timer / CLOCKS_PER_SEC) ;
   }
 
 bool BackwardReasoning::Run (const uint8_t* MachineSpec)
   {
-  for (int i = 0 ; i <= NSTATES ; i++) TransitionTable[i].clear() ;
+  for (uint32_t i = 0 ; i <= MachineStates ; i++) PredecessorTable[i].clear() ;
 
   // Built the backward transition table from the MachineSpec
-  for (uint8_t State = 1 ; State <= NSTATES ; State++)
+  for (uint8_t State = 1 ; State <= MachineStates ; State++)
+    {
     for (uint8_t Cell = 0 ; Cell <= 1 ; Cell++)
       {
-      Transition T ;
+      Predecessor T ;
+      UnpackSpec (&T, MachineSpec) ;
       T.State = State ;
       T.Read = Cell ;
-      T.Write = *MachineSpec++ ;
-      T.Move = *MachineSpec++ ;
-      uint8_t Next = *MachineSpec++ ;
-      TransitionTable[Next].push_back (T) ;
+
+      PredecessorTable[T.Next].push_back (T) ;
+
+      MachineSpec += 3 ;
       }
+    }
 
   // Start in state 0 with unspecified tape
   memset (Tape - SpaceLimit + 1, TAPE_UNSET, 2 * SpaceLimit - 1) ;
@@ -247,7 +219,7 @@ bool BackwardReasoning::Recurse (uint32_t Depth, const Configuration& Config)
   if (Depth > MaxDepth) MaxDepth = Depth ;
 
   Configuration PrevConfig ;
-  for (const auto& T : TransitionTable[Config.State])
+  for (const auto& T : PredecessorTable[Config.State])
     {
     // Update the tape head
     if (T.Move)
@@ -302,30 +274,11 @@ void CommandLineParams::Parse (int argc, char** argv)
 
   for (argc--, argv++ ; argc ; argc--, argv++)
     {
+    if (DeciderParams::ParseParam (argv[0])) continue ;
     if (argv[0][0] != '-') printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
     switch (toupper (argv[0][1]))
       {
       case 'S':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        SeedDatabaseFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'I':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        InputFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'V':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        VerificationFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'U':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        UndecidedFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'D':
         DepthLimit = atoi (&argv[0][2]) ;
         DepthLimitPresent = true ;
         break ;
@@ -336,19 +289,15 @@ void CommandLineParams::Parse (int argc, char** argv)
       }
     }
 
-  if (InputFile.empty()) printf ("Input file not specified\n"), PrintHelpAndExit (1) ;
   if (!DepthLimitPresent) printf ("Depth limit not specified\n"), PrintHelpAndExit (1) ;
   }
 
 void CommandLineParams::PrintHelpAndExit (int status)
   {
+  printf ("BackwardReasoning <param> <param>...") ;
+  DeciderParams::PrintHelp() ;
   printf (R"*RAW*(
-BackwardReasoning <param> <param>...
-  <param>: -S<seed database>      Seed database file (defaults to ../SeedDatabase.bin)
-           -I<input file>         Input file: list of machines to be analysed
-           -V<verification file>  Output file: verification data for decided machines
-           -U<undecided file>     Output file: remaining undecided machines
-           -D<depth limit>        Max search depth
+           -S<depth limit>       Max search depth
 )*RAW*") ;
   exit (status) ;
   }

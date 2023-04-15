@@ -1,12 +1,29 @@
+// DecideBouncers  <param> <param>...
+//   <param>: -N<states>            Machine states (5 or 6)
+//            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
+//            -V<verification file> Output file: verification data for decided machines
+//            -I<input file>        Input file: list of machines to be analysed (default=all machines)
+//            -U<undecided file>    Output file: remaining undecided machines
+//            -X<test machine>      Machine to test
+//            -M<machine spec>      Compact machine code (ASCII spec) to test
+//            -L<machine limit>     Max no. of machines to test
+//            -H<threads>           Number of threads to use
+//            -O                    Print trace output
+//            -T<time limit>        Max no. of steps
+//            -S<space limit>       Max absolute value of tape head
+//            -B[<bells-file>]      Output <bells-file>.txt and <bells-file>.umf (default ProbableBells)
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
 #include <string>
-#include <boost/thread.hpp>
+#include <vector>
+#include <thread>
 
 #include "BouncerDecider.h"
+#include "../Params.h"
 
 // Number of machines to assign to each thread
 #define DEFAULT_CHUNK_SIZE 256
@@ -14,194 +31,130 @@ static uint32_t ChunkSize = DEFAULT_CHUNK_SIZE ;
 
 #define VERIF_AVERAGE_LENGTH 10000 // Max average length of verification entries in a chunk
 
-class CommandLineParams
+class CommandLineParams : public DeciderParams
   {
 public:
-  static std::string SeedDatabaseFile ;
-  static std::string InputFile ;
-  static std::string VerificationFile ;
-  static std::string UndecidedFile ;
-  static std::string BellsFile ;
-  static uint32_t TimeLimit ;     static bool TimeLimitPresent ;
-  static uint32_t SpaceLimit ;    static bool SpaceLimitPresent ;
-  static uint32_t nThreads ;      static bool nThreadsPresent ;
-  static uint32_t TestMachine ;   static bool TestMachinePresent ;
-  static uint32_t MachineLimit ;  static bool MachineLimitPresent ;
-  static bool OutputBells ;
-  static bool TraceOutput ;
-  static void Parse (int argc, char** argv) ;
-  static void PrintHelpAndExit [[noreturn]] (int status) ;
+  std::string BellsFile ;
+  uint32_t TimeLimit ;  bool TimeLimitPresent = false ;
+  uint32_t SpaceLimit ; bool SpaceLimitPresent = false ;
+  bool OutputBells = false ;
+  FILE* fpBellTxt = 0 ;
+  FILE* fpBellUmf = 0 ;
+
+  void Parse (int argc, char** argv) ;
+  void PrintHelpAndExit [[noreturn]] (int status) ;
+
+  virtual void OpenFiles() override
+    {
+    DeciderParams::OpenFiles() ;
+    if (OutputBells)
+      {
+      if (BellsFile.empty()) BellsFile = "ProbableBells" ;
+      fpBellTxt = OpenFile ((BellsFile + ".txt").c_str(), "wt") ;
+      fpBellUmf = OpenFile ((BellsFile + ".umf").c_str(), "wb") ;
+      }
+    }
   } ;
 
-std::string CommandLineParams::SeedDatabaseFile ;
-std::string CommandLineParams::InputFile ;
-std::string CommandLineParams::VerificationFile ;
-std::string CommandLineParams::UndecidedFile ;
-std::string CommandLineParams::BellsFile ;
-uint32_t CommandLineParams::TimeLimit ;     bool CommandLineParams::TimeLimitPresent ;
-uint32_t CommandLineParams::SpaceLimit ;    bool CommandLineParams::SpaceLimitPresent ;
-uint32_t CommandLineParams::nThreads ;      bool CommandLineParams::nThreadsPresent ;
-uint32_t CommandLineParams::TestMachine ;   bool CommandLineParams::TestMachinePresent ;
-uint32_t CommandLineParams::MachineLimit ;  bool CommandLineParams::MachineLimitPresent ;
-bool CommandLineParams::OutputBells ;
-bool CommandLineParams::TraceOutput ;
+static CommandLineParams Params ;
+static TuringMachineReader Reader ;
 
 int main (int argc, char** argv)
   {
-  CommandLineParams::Parse (argc, argv) ;
+  Params.Parse (argc, argv) ;
+  Params.CheckParameters() ;
+  Params.OpenFiles() ;
 
-  TuringMachineReader Reader (CommandLineParams::SeedDatabaseFile.c_str()) ;
+  Reader.SetParams (&Params) ;
 
-  FILE* fpVerif = 0 ;
-  if (!CommandLineParams::VerificationFile.empty())
+  if (!Params.nThreadsPresent)
     {
-    fpVerif = fopen (CommandLineParams::VerificationFile.c_str(), "wb") ;
-    if (fpVerif == NULL)
-      printf ("Can't open output file \"%s\"\n", CommandLineParams::VerificationFile.c_str()), exit (1) ;
-    }
-
-  uint8_t MachineSpec[MACHINE_SPEC_SIZE] ;
-  if (CommandLineParams::TestMachinePresent)
-    {
-    BouncerDecider Decider (CommandLineParams::TimeLimit,
-      CommandLineParams::SpaceLimit, CommandLineParams::TraceOutput) ;
-    Decider.Clone = new BouncerDecider (CommandLineParams::TimeLimit,
-      CommandLineParams::SpaceLimit, CommandLineParams::TraceOutput) ;
-    Decider.SeedDatabaseIndex = CommandLineParams::TestMachine ;
-    Reader.Read (Decider.SeedDatabaseIndex, MachineSpec) ;
-    uint8_t* VerificationEntry = 0 ;
-    if (fpVerif) VerificationEntry = new uint8_t[VERIF_INFO_MAX_LENGTH] ;
-    bool Decided = Decider.RunDecider (MachineSpec, VerificationEntry) ;
-    printf ("%d\n", Decided) ;
-    if (Decided && fpVerif)
+    if (Reader.SingleEntry) Params.nThreads = 1 ;
+    else
       {
-      Save32 (VerificationEntry, Decider.SeedDatabaseIndex) ;
-      Save32 (VerificationEntry + 4, (int)DeciderTag::BOUNCER) ;
-      Write32 (fpVerif, 1) ;
-      uint32_t InfoLength = Load32 (VerificationEntry + 8) ;
-      if (fpVerif && fwrite (VerificationEntry,
-        VERIF_HEADER_LENGTH + InfoLength, 1, fpVerif) != 1)
-          printf ("Error writing file\n"), exit (1) ;
+      Params.nThreads = 4 ;
+      char* env = getenv ("NUMBER_OF_PROCESSORS") ;
+      if (env)
+        {
+        Params.nThreads = atoi (env) ;
+        if (Params.nThreads == 0) Params.nThreads = 4 ;
+        }
+      printf ("nThreads = %d\n", Params.nThreads) ;
       }
-    exit (0) ;
     }
-
-  // fpin contains the list of machines to analyse
-  FILE* fpin = fopen (CommandLineParams::InputFile.c_str(), "rb") ;
-  if (fpin == NULL) printf ("Can't open input file\n"), exit (1) ;
-  if (fseek (fpin, 0, SEEK_END))
-    printf ("fseek failed\n"), exit (1) ;
-  uint32_t InputFileSize = ftell (fpin) ;
-  if (InputFileSize & 3) // Must be a multiple of 4 bytes
-    printf ("Invalid input file %s\n", CommandLineParams::InputFile.c_str()), exit (1) ;
-  if (fseek (fpin, 0, SEEK_SET))
-    printf ("fseek failed\n"), exit (1) ;
-
-  FILE* fpUndecided = 0 ;
-  if (!CommandLineParams::UndecidedFile.empty())
-    {
-    fpUndecided = fopen (CommandLineParams::UndecidedFile.c_str(), "wb") ;
-    if (fpUndecided == NULL)
-      printf ("Can't open output file \"%s\"\n", CommandLineParams::UndecidedFile.c_str()), exit (1) ;
-    }
-
-  FILE* fpBellTxt = 0 ;
-  FILE* fpBellUmf = 0 ;
-  if (CommandLineParams::OutputBells)
-    {
-    if (CommandLineParams::BellsFile.empty())
-      CommandLineParams::BellsFile = std::string ("ProbableBells") ;
-    fpBellTxt = fopen ((CommandLineParams::BellsFile + ".txt").c_str(), "wt") ;
-    if (fpBellTxt == 0) printf ("Can't open %s.txt for writing\n",
-      CommandLineParams::BellsFile.c_str()), exit (1) ;
-    fpBellUmf = fopen ((CommandLineParams::BellsFile + ".umf").c_str(), "wb") ;
-    if (fpBellTxt == 0) printf ("Can't open %s.umf for writing\n",
-      CommandLineParams::BellsFile.c_str()), exit (1) ;
-    }
-
-  uint32_t nMachines = InputFileSize >> 2 ;
-  uint32_t nProbableBells = 0 ;
-
-  if (!CommandLineParams::nThreadsPresent)
-    {
-    CommandLineParams::nThreads = 4 ;
-    char* env = getenv ("NUMBER_OF_PROCESSORS") ;
-    if (env)
-      {
-      CommandLineParams::nThreads = atoi (env) ;
-      if (CommandLineParams::nThreads == 0) CommandLineParams::nThreads = 4 ;
-      }
-    printf ("nThreads = %d\n", CommandLineParams::nThreads) ;
-    }
-  std::vector<boost::thread*> ThreadList (CommandLineParams::nThreads) ;
+  std::vector<std::thread*> ThreadList (Params.nThreads) ;
 
   // Make sure the progress indicator updates reasonably often
-  if (CommandLineParams::nThreads * ChunkSize * 50 > nMachines)
-    ChunkSize = 1 + nMachines / (50 * CommandLineParams::nThreads) ;
+  if (Params.nThreads * ChunkSize * 50 > Reader.nMachines)
+    ChunkSize = 1 + Reader.nMachines / (50 * Params.nThreads) ;
 
   // Write dummy dvf header
-  Write32 (fpVerif, 0) ;
+  Write32 (Params.fpVerify, 0) ;
 
   clock_t Timer = clock() ;
 
-  BouncerDecider** DeciderArray = new BouncerDecider*[CommandLineParams::nThreads] ;
-  uint32_t** MachineIndexList = new uint32_t*[CommandLineParams::nThreads] ;
-  uint8_t** MachineSpecList = new uint8_t*[CommandLineParams::nThreads] ;
-  uint8_t** VerificationEntryList = new uint8_t*[CommandLineParams::nThreads] ;
-  uint32_t* ChunkSizeArray = new uint32_t[CommandLineParams::nThreads] ;
-  for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
+  BouncerDecider** DeciderArray = new BouncerDecider*[Params.nThreads] ;
+  uint32_t** MachineIndexList = new uint32_t*[Params.nThreads] ;
+  uint8_t** MachineSpecList = new uint8_t*[Params.nThreads] ;
+  uint8_t** VerificationEntryList = new uint8_t*[Params.nThreads] ;
+  uint32_t* ChunkSizeArray = new uint32_t[Params.nThreads] ;
+  for (uint32_t i = 0 ; i < Params.nThreads ; i++)
     {
-    DeciderArray[i] = new BouncerDecider (CommandLineParams::TimeLimit,
-      CommandLineParams::SpaceLimit, CommandLineParams::TraceOutput) ;
-    DeciderArray[i] -> Clone = new BouncerDecider (CommandLineParams::TimeLimit,
-      CommandLineParams::SpaceLimit, CommandLineParams::TraceOutput) ;
+    DeciderArray[i] = new BouncerDecider (Params.MachineStates, Params.TimeLimit,
+      Params.SpaceLimit, Params.TraceOutput) ;
+    DeciderArray[i] -> Clone = new BouncerDecider (Params.MachineStates, Params.TimeLimit,
+      Params.SpaceLimit, Params.TraceOutput) ;
     MachineIndexList[i] = new uint32_t[ChunkSize] ;
-    MachineSpecList[i] = new uint8_t[MACHINE_SPEC_SIZE * ChunkSize] ;
+    MachineSpecList[i] = new uint8_t[Reader.MachineSpecSize * ChunkSize] ;
     VerificationEntryList[i] = new uint8_t[VERIF_AVERAGE_LENGTH * DEFAULT_CHUNK_SIZE] ;
     }
 
   uint32_t nDecided = 0 ;
   uint32_t nCompleted = 0 ;
+  uint32_t nProbableBells = 0 ;
   int LastPercent = -1 ;
   uint32_t nTimeLimitedDecided = 0 ;
   uint32_t nSpaceLimitedDecided = 0 ;
 
-  if (CommandLineParams::MachineLimitPresent) nMachines = CommandLineParams::MachineLimit ;
-  while (nCompleted < nMachines)
+  while (nCompleted < Reader.nMachines)
     {
-    uint32_t nRemaining = nMachines - nCompleted ;
-    if (nRemaining >= CommandLineParams::nThreads * ChunkSize)
+    uint32_t nRemaining = Reader.nMachines - nCompleted ;
+    if (nRemaining >= Params.nThreads * ChunkSize)
       {
-      for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++) ChunkSizeArray[i] = ChunkSize ;
+      for (uint32_t i = 0 ; i < Params.nThreads ; i++) ChunkSizeArray[i] = ChunkSize ;
       }
     else
       {
-      for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
+      for (uint32_t i = 0 ; i < Params.nThreads ; i++)
         {
-        ChunkSizeArray[i] = nRemaining / (CommandLineParams::nThreads - i) ;
+        ChunkSizeArray[i] = nRemaining / (Params.nThreads - i) ;
         nRemaining -= ChunkSizeArray[i] ;
         }
       }
 
-    std::vector<boost::thread*> ThreadList (CommandLineParams::nThreads) ;
-    for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
+    std::vector<std::thread*> ThreadList (Params.nThreads) ;
+    for (uint32_t i = 0 ; i < Params.nThreads ; i++)
       {
       for (uint32_t j = 0 ; j < ChunkSizeArray[i] ; j++)
-        {
-        MachineIndexList[i][j] = Read32 (fpin) ;
-        Reader.Read (MachineIndexList[i][j], MachineSpecList[i] + j * MACHINE_SPEC_SIZE) ;
-        }
+        MachineIndexList[i][j] = Reader.Next (MachineSpecList[i] + j * Reader.MachineSpecSize) ;
 
-      ThreadList[i] = new boost::thread (&BouncerDecider::ThreadFunction, DeciderArray[i],
-        ChunkSizeArray[i], MachineIndexList[i], MachineSpecList[i],
+      if (Params.nThreads == 1)
+        DeciderArray[0] -> ThreadFunction (ChunkSizeArray[i], MachineIndexList[i], MachineSpecList[i], Reader.MachineSpecSize,
           VerificationEntryList[i], VERIF_AVERAGE_LENGTH * DEFAULT_CHUNK_SIZE) ;
+      ThreadList[i] = new std::thread (&BouncerDecider::ThreadFunction, DeciderArray[i],
+        ChunkSizeArray[i], MachineIndexList[i], MachineSpecList[i], Reader.MachineSpecSize,
+          VerificationEntryList[i], VERIF_AVERAGE_LENGTH * DEFAULT_CHUNK_SIZE) ;
+
+      nCompleted += ChunkSizeArray[i] ;
       }
 
-    for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
+    for (uint32_t i = 0 ; i < Params.nThreads ; i++)
       {
-      // Wait for thread i to finish
-      ThreadList[i] -> join() ;
-      delete ThreadList[i] ;
+      if (Params.nThreads != 1)
+        {
+        ThreadList[i] -> join() ; // Wait for thread i to finish
+        delete ThreadList[i] ;
+        }
 
       const uint8_t* MachineSpec = MachineSpecList[i] ;
       const uint8_t* VerificationEntry = VerificationEntryList[i] ;
@@ -210,24 +163,22 @@ int main (int argc, char** argv)
         switch ((int)Load32 (VerificationEntry))
           {
           case -1:
-            Write32 (fpUndecided, MachineIndexList[i][j]) ;
-            Write32 (fpBellUmf, MachineIndexList[i][j]) ;
-            if (fpBellTxt) fprintf (fpBellTxt, "%d\n", MachineIndexList[i][j]) ;
+            Write32 (Params.fpUndecided, MachineIndexList[i][j]) ;
+            Write32 (Params.fpBellUmf, MachineIndexList[i][j]) ;
+            if (Params.fpBellTxt) fprintf (Params.fpBellTxt, "%d\n", MachineIndexList[i][j]) ;
             nProbableBells++ ;
             VerificationEntry += 4 ;
             break ;
 
           case -2:
-            Write32 (fpUndecided, MachineIndexList[i][j]) ;
+            Write32 (Params.fpUndecided, MachineIndexList[i][j]) ;
             VerificationEntry += 4 ;
             break ;
 
           default:
             {
             uint32_t InfoLength = Load32 (VerificationEntry + 8) ;
-            if (fpVerif && fwrite (VerificationEntry,
-              VERIF_HEADER_LENGTH + InfoLength, 1, fpVerif) != 1)
-                printf ("Error writing file\n"), exit (1) ;
+            Write (Params.fpVerify, VerificationEntry, VERIF_HEADER_LENGTH + InfoLength) ;
             nDecided++ ;
             if (MachineIndexList[i][j] < Reader.nTimeLimited) nTimeLimitedDecided++ ;
             else nSpaceLimitedDecided++ ;
@@ -235,12 +186,11 @@ int main (int argc, char** argv)
             }
             break ;
           }
-        MachineSpec += MACHINE_SPEC_SIZE ;
-        nCompleted++ ;
+        MachineSpec += Reader.MachineSpecSize ;
         }
       }
 
-    int Percent = (nCompleted * 100LL) / nMachines ;
+    int Percent = (nCompleted * 100LL) / Reader.nMachines ;
     if (Percent != LastPercent)
       {
       LastPercent = Percent ;
@@ -250,24 +200,24 @@ int main (int argc, char** argv)
     }
   printf ("\n") ;
 
-  if (fpUndecided) fclose (fpUndecided) ;
-  fclose (fpin) ;
+  if (Params.fpUndecided) fclose (Params.fpUndecided) ;
+  fclose (Params.fpInput) ;
 
   Timer = clock() - Timer ;
 
-  if (fpVerif)
+  if (Params.fpVerify)
     {
     // Write the verification file header
-    if (fseek (fpVerif, 0 , SEEK_SET))
+    if (fseek (Params.fpVerify, 0 , SEEK_SET))
       printf ("\nfseek failed\n"), exit (1) ;
-    Write32 (fpVerif, nDecided) ;
-    fclose (fpVerif) ;
+    Write32 (Params.fpVerify, nDecided) ;
+    fclose (Params.fpVerify) ;
     }
 
-  if (fpBellUmf) fclose (fpBellUmf) ;
-  if (fpBellTxt) fclose (fpBellTxt) ;
+  if (Params.fpBellUmf) fclose (Params.fpBellUmf) ;
+  if (Params.fpBellTxt) fclose (Params.fpBellTxt) ;
 
-  printf ("\nDecided %d out of %d\n", nDecided, nMachines) ;
+  printf ("\nDecided %d out of %d\n", nDecided, Reader.nMachines) ;
   printf ("Elapsed time %.3f\n", (double)Timer / CLOCKS_PER_SEC) ;
 
   uint32_t nUnilateral = 0 ;
@@ -276,6 +226,7 @@ int main (int argc, char** argv)
   uint32_t nDouble = 0 ;
   uint32_t nMultiple = 0 ;
   uint32_t nPartitioned = 0 ;
+  uint32_t nHalters = 0 ;
 
   uint32_t nRunsMax = 0 ;
   uint32_t nRunsMachine = 0 ;
@@ -286,7 +237,7 @@ int main (int argc, char** argv)
   int MaxStat = INT_MIN ;
   uint32_t MaxStatMachine = 0 ;
 
-  for (uint32_t i = 0 ; i < CommandLineParams::nThreads ; i++)
+  for (uint32_t i = 0 ; i < Params.nThreads ; i++)
     {
     nUnilateral  += DeciderArray[i] -> nUnilateral ;
     nBilateral   += DeciderArray[i] -> nBilateral ;
@@ -294,6 +245,7 @@ int main (int argc, char** argv)
     nDouble      += DeciderArray[i] -> nDouble ;
     nMultiple    += DeciderArray[i] -> nMultiple ;
     nPartitioned += DeciderArray[i] -> nPartitioned ;
+    nHalters     += DeciderArray[i] -> nHalters ;
 
     if (DeciderArray[i] -> nRunsMax > nRunsMax)
       {
@@ -319,6 +271,8 @@ int main (int argc, char** argv)
   printf ("%d Unilateral\n", nUnilateral) ;
   printf ("%d Bilateral\n", nBilateral) ;
   printf ("%d Translated\n", nTranslated) ;
+  if (nHalters)
+    printf ("%d Halter%s\n", nHalters, nHalters == 1 ? "" : "s") ;
 
   printf ("\n%d Double\n", nDouble) ;
   printf ("%d Multiple\n", nMultiple) ;
@@ -331,19 +285,17 @@ int main (int argc, char** argv)
   }
 
 void BouncerDecider::ThreadFunction (int nMachines, const uint32_t* MachineIndexList,
-  const uint8_t* MachineSpecList, uint8_t* VerificationEntryList, uint32_t VerifLength)
+  const uint8_t* MachineSpecList, uint32_t MachineSpecSize, uint8_t* VerificationEntryList, uint32_t VerifLength)
   {
   const uint8_t* VerificationEntryLimit = VerificationEntryList + VerifLength ;
   VerificationEntryLimit -= VERIF_INFO_MAX_LENGTH ;
   while (nMachines--)
     {
     SeedDatabaseIndex = *MachineIndexList++ ;
+    Save32 (VerificationEntryList, SeedDatabaseIndex) ;
+    Save32 (VerificationEntryList + 4, uint32_t (DeciderTag::BOUNCER)) ;
     if (RunDecider (MachineSpecList, VerificationEntryList))
-      {
-      Save32 (VerificationEntryList, SeedDatabaseIndex) ;
-      Save32 (VerificationEntryList + 4, uint32_t (DeciderTag::BOUNCER)) ;
       VerificationEntryList += VERIF_HEADER_LENGTH + Load32 (VerificationEntryList + 8) ;
-      }
     else
       {
       Save32 (VerificationEntryList, Type == BouncerType::Bell ? -1 : -2) ;
@@ -353,7 +305,7 @@ void BouncerDecider::ThreadFunction (int nMachines, const uint32_t* MachineIndex
     if (VerificationEntryList > VerificationEntryLimit)
       printf ("\nVerificationEntryLimit exceeded\n"), exit (1) ;
 
-    MachineSpecList += MACHINE_SPEC_SIZE ;
+    MachineSpecList += MachineSpecSize ;
     }
   }
 
@@ -363,29 +315,10 @@ void CommandLineParams::Parse (int argc, char** argv)
 
   for (argc--, argv++ ; argc ; argc--, argv++)
     {
+    if (DeciderParams::ParseParam (argv[0])) continue ;
     if (argv[0][0] != '-') printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
     switch (toupper (argv[0][1]))
       {
-      case 'D':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        SeedDatabaseFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'I':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        InputFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'V':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        VerificationFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'U':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        UndecidedFile = std::string (&argv[0][2]) ;
-        break ;
-
       case 'T':
         TimeLimit = atoi (&argv[0][2]) ;
         TimeLimitPresent = true ;
@@ -396,28 +329,9 @@ void CommandLineParams::Parse (int argc, char** argv)
         SpaceLimitPresent = true ;
         break ;
 
-      case 'M':
-        nThreads = atoi (&argv[0][2]) ;
-        nThreadsPresent = true ;
-        break ;
-
-      case 'X':
-        TestMachine = atoi (&argv[0][2]) ;
-        TestMachinePresent = true ;
-        break ;
-
-      case 'L':
-        MachineLimit = atoi (&argv[0][2]) ;
-        MachineLimitPresent = true ;
-        break ;
-
       case 'B':
         OutputBells = true ;
         if (argv[0][2]) BellsFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'O':
-        TraceOutput = true ;
         break ;
 
       default:
@@ -426,28 +340,18 @@ void CommandLineParams::Parse (int argc, char** argv)
       }
     }
 
-  if (!TestMachinePresent && InputFile.empty())
-    printf ("Input file not specified\n"), PrintHelpAndExit (1) ;
-
   if (!TimeLimitPresent) printf ("Time limit not specified\n"), PrintHelpAndExit (1) ;
   if (!SpaceLimitPresent) printf ("Space limit not specified\n"), PrintHelpAndExit (1) ;
   }
 
 void CommandLineParams::PrintHelpAndExit (int status)
   {
+  printf ("Bouncers <param> <param>...") ;
+  DeciderParams::PrintHelp() ;
   printf (R"*RAW*(
-Bouncers <param> <param>...
-  <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
-           -I<input file>         Input file: list of machines to be analysed
-           -V<verification file>  Output file: verification data for decided machines
-           -U<undecided file>     Output file: remaining undecided machines
-           -T<time limit>         Max no. of steps
-           -S<space limit>        Max absolute value of tape head
-           -X<test machine>       Machine to test
-           -M<threads>            Number of threads to use
-           -L<machine limit>      Max no. of machines to test
-           -B[<bells-file>]       Output <bells-file>.txt and <bells-file>.umf (default ProbableBells)
-           -O                     Print trace output
+           -T<time limit>        Max no. of steps
+           -S<space limit>       Max absolute value of tape head
+           -B[<bells-file>]      Output <bells-file>.txt and <bells-file>.umf (default ProbableBells)
 )*RAW*") ;
   exit (status) ;
   }

@@ -2,7 +2,7 @@
 
 #include <limits.h>
 #include <vector>
-#include "../bbchallenge.h"
+#include "../TuringMachine.h"
 
 // Decider-specific Verification Data:
 #define VERIF_INFO_LENGTH 32
@@ -10,12 +10,13 @@
 class TranslatedCycler : public TuringMachine
   {
 public:
-  TranslatedCycler (uint32_t TimeLimit, uint32_t SpaceLimit, bool TraceOutput)
-  : TuringMachine (SpaceLimit)
+  TranslatedCycler (uint32_t MachineStates, uint32_t TimeLimit,
+    uint32_t SpaceLimit, bool TraceOutput)
+  : TuringMachine (MachineStates, SpaceLimit)
   , TimeLimit (TimeLimit)
   , TraceOutput (TraceOutput)
     {
-    Clone = new TuringMachine (SpaceLimit) ;
+    Clone = new TuringMachine (MachineStates, SpaceLimit) ;
 
     // Allocate workspace
     RecordLimit = 50000 ; // for now
@@ -41,8 +42,8 @@ public:
     } ;
   Record* LeftRecordList ;
   Record* RightRecordList ;
-  Record* LatestLeftRecord[NSTATES + 1] ;
-  Record* LatestRightRecord[NSTATES + 1] ;
+  Record* LatestLeftRecord[MAX_MACHINE_STATES + 1] ;
+  Record* LatestRightRecord[MAX_MACHINE_STATES + 1] ;
   uint32_t RecordLimit ;
 
   TuringMachine* Clone ;

@@ -1,5 +1,30 @@
-To compile with g++ 7.3.0, run Compile.bat.
+To compile with g++ 12.2.0, run Compile.bat.
 To generate umf and dvf files, run Run.bat.
+
+With parameter -W21, this Decider takes the 132,538 undecided machines from the Bouncers Decider and classifies 46,581 machines as non-halting, leaving 85,957 undecided machines. Time (limited to 4 threads): 2 hours.
+
+Decider
+-------
+ HaltingSegments <param> <param>...
+   <param>: -N<states>            Machine states (5 or 6)
+            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
+            -V<verification file> Output file: verification data for decided machines
+            -I<input file>        Input file: list of machines to be analysed (default=all machines)
+            -U<undecided file>    Output file: remaining undecided machines
+            -X<test machine>      Machine to test
+            -M<machine spec>      Compact machine code (ASCII spec) to test
+            -L<machine limit>     Max no. of machines to test
+            -H<threads>           Number of threads to use
+            -O                    Print trace output
+            -W<width limit>       Max segment width (must be odd)
+            -S<stack depth>       Max stack depth (default 10000)
+
+To compile with g++ 12.2.0, run Compile.bat.
+To generate umf and dvf files, run Run.bat.
+
+Verifier
+--------
+No Verifier is provided.
 
 This Decider takes the 1,538,624 undecided machines from the BackwardReasoning Decider and classifies 1,022,908 machines as non-halting. Time: 61 minutes. Maximum segment width was set to 17.
 

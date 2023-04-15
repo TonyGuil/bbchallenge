@@ -1,10 +1,7 @@
-// VerifyCyclers.cpp: verification program for Cyclers decider
-//
-// To invoke:
-//
-//   VerifyCyclers <param> <param>...
-//     <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
-//              -V<verification file>  Output file: verification data for decided machines
+// VerifyCyclers <param> <param>...
+//   <param>: -N<states>            Machine states (5 or 6)
+//            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
+//            -V<verification file> Input file: verification data to be checked
 //
 // Format of verification info:
 //
@@ -22,26 +19,26 @@
 #include <time.h>
 #include <string>
 
-#include "../bbchallenge.h"
+#include "../TuringMachine.h"
+#include "../Params.h"
 
 #define VERIF_INFO_LENGTH 24
 
-class CommandLineParams
+class CommandLineParams : public VerifierParams
   {
 public:
-  static std::string SeedDatabaseFile ;
-  static std::string VerificationFile ;
-  static void Parse (int argc, char** argv) ;
-  static void PrintHelpAndExit [[noreturn]] (int status) ;
+  void Parse (int argc, char** argv) ;
+  virtual void PrintHelpAndExit (int status) override ;
   } ;
 
-std::string CommandLineParams::SeedDatabaseFile ;
-std::string CommandLineParams::VerificationFile ;
+static CommandLineParams Params ;
+static TuringMachineReader Reader ;
 
 class CyclerVerifier : public TuringMachine
   {
 public:
-  CyclerVerifier() : TuringMachine (MAX_SPACE)
+  CyclerVerifier (uint32_t  MachineStates)
+  : TuringMachine (MachineStates, MAX_SPACE)
     {
     InitialTape = new uint8_t[2 * MAX_SPACE + 1] ;
     MaxSteps = 0 ;
@@ -55,22 +52,21 @@ public:
 
 int main (int argc, char** argv)
   {
-  CommandLineParams::Parse (argc, argv) ;
-  TuringMachineReader Reader (CommandLineParams::SeedDatabaseFile.c_str()) ;
-  FILE* fpVerify = fopen (CommandLineParams::VerificationFile.c_str(), "rb") ;
-  if (fpVerify == 0)
-    printf ("File \"%s\" not found\n", CommandLineParams::VerificationFile.c_str()), exit (1) ;
+  Params.Parse (argc, argv) ;
+  Params.CheckParameters() ;
+  Params.OpenFiles() ;
 
-  uint32_t nEntries = Read32 (fpVerify) ;
+  Reader.SetParams (&Params) ;
+
   int LastPercent = -1 ;
-  uint8_t MachineSpec[MACHINE_SPEC_SIZE] ;
-  CyclerVerifier Verifier ;
+  uint8_t MachineSpec[MAX_MACHINE_SPEC_SIZE] ;
+  CyclerVerifier Verifier (Params.MachineStates) ;
 
   clock_t Timer = clock() ;
 
-  for (uint32_t Entry = 0 ; Entry < nEntries ; Entry++)
+  for (uint32_t Entry = 0 ; Entry < Reader.nMachines ; Entry++)
     {
-    int Percent = ((Entry + 1) * 100LL) / nEntries ;
+    int Percent = ((Entry + 1) * 100LL) / Reader.nMachines ;
     if (Percent != LastPercent)
       {
       printf ("\r%d%%", Percent) ;
@@ -78,22 +74,21 @@ int main (int argc, char** argv)
       LastPercent = Percent ;
       }
 
-    uint32_t SeedDatabaseIndex = Read32 (fpVerify) ;
-    if (DeciderTag (Read32 (fpVerify)) != DeciderTag::CYCLER)
+    uint32_t SeedDatabaseIndex = Read32 (Params.fpVerify) ;
+    if (DeciderTag (Read32 (Params.fpVerify)) != DeciderTag::CYCLER)
       printf ("\nUnrecognised DeciderTag\n") ;
 
     Reader.Read (SeedDatabaseIndex, MachineSpec) ;
-    Verifier.Verify (SeedDatabaseIndex, MachineSpec, fpVerify) ;
+    Verifier.Verify (SeedDatabaseIndex, MachineSpec, Params.fpVerify) ;
     }
 
   Timer = clock() - Timer ;
 
   // Check that we have reached the end of the verification file
-  if (fread (MachineSpec, 1, 1, fpVerify) != 0)
-    printf ("File too long!\n"), exit (1) ;
-  fclose (fpVerify) ;
+  if (!CheckEndOfFile (Params.fpVerify)) printf ("File too long!\n"), exit (1) ;
+  fclose (Params.fpVerify) ;
 
-  printf ("\n%d Cyclers verified\n", nEntries) ;
+  printf ("\n%d Cyclers verified\n", Reader.nMachines) ;
   printf ("Max %d steps\n", Verifier.MaxSteps) ;
   printf ("Elapsed time %.3f\n", (double)Timer / CLOCKS_PER_SEC) ;
   }
@@ -176,35 +171,18 @@ void CommandLineParams::Parse (int argc, char** argv)
   if (argc == 1) PrintHelpAndExit (0) ;
 
   for (argc--, argv++ ; argc ; argc--, argv++)
-    {
-    if (argv[0][0] != '-') printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-    switch (toupper (argv[0][1]))
+    if (!CommonParams::ParseParam (argv[0]))
       {
-      case 'D':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        SeedDatabaseFile = std::string (&argv[0][2]) ;
-        break ;
-
-      case 'V':
-        if (argv[0][2] == 0) printf ("Invalid parameter \"%s\"\n", argv[0]), PrintHelpAndExit (1) ;
-        VerificationFile = std::string (&argv[0][2]) ;
-        break ;
-
-      default:
-        printf ("Invalid parameter \"%s\"\n", argv[0]) ;
-        PrintHelpAndExit (1) ;
+      printf ("Invalid parameter \"%s\"\n", argv[0]) ;
+      PrintHelpAndExit (1) ;
       }
-    }
 
-  if (VerificationFile.empty()) printf ("Verification file not specified\n"), PrintHelpAndExit (1) ;
+  if (VerificationFilename.empty()) printf ("Verification file not specified\n"), PrintHelpAndExit (1) ;
   }
 
 void CommandLineParams::PrintHelpAndExit (int status)
   {
-  printf (R"*RAW*(
-VerifyCyclers <param> <param>...
-  <param>: -D<database>           Seed database file (defaults to ../SeedDatabase.bin)
-           -V<verification file>  Decider Verification File for decided machines
-)*RAW*") ;
+  printf ("VerifyCyclers <param> <param>...\n") ;
+  PrintHelp() ;
   exit (status) ;
   }

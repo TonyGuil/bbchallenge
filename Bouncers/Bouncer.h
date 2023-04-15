@@ -4,7 +4,7 @@
 #pragma once
 
 #include <vector>
-#include "../bbchallenge.h"
+#include "../TuringMachine.h"
 
 #define MAX_PARTITIONS     8    // #43477769 has 4 partitions
 #define MAX_RUNS           500  // #3957107 has 156 runs
@@ -17,8 +17,8 @@
 class Bouncer : public TuringMachine
   {
 public:
-  Bouncer (uint32_t SpaceLimit, bool TraceOutput)
-  : TuringMachine (SpaceLimit)
+  Bouncer (uint32_t  MachineStates, uint32_t SpaceLimit, bool TraceOutput)
+  : TuringMachine (MachineStates, SpaceLimit)
   , InitialTape (this)
   , TraceOutput (TraceOutput)
     {
@@ -29,6 +29,7 @@ public:
     nMultiple = 0 ;
     nPartitioned = 0 ;
     nBells = 0 ;
+    nHalters = 0 ;
 
     nRunsMax = 0 ;
     MaxRepeaterPeriod = 0 ;
@@ -46,9 +47,6 @@ public:
     Bell, // Not a bouncer, but we may as well count these
     } ;
   BouncerType Type ;
-
-  void ThreadFunction (int nMachines, const uint32_t* MachineIndexList,
-    const uint8_t* MachineSpecList, uint8_t* VerificationEntryList, uint32_t VerifLength) ;
 
   uint32_t nRuns ;
   uint32_t nPartitions ;
@@ -100,7 +98,6 @@ public:
   void InitTapePosition (const TapeDescriptor& TD, TapePosition& TP) const ;
   uint8_t NextCell (const TapeDescriptor& TD, TapePosition& TP, int TapeHeadOffset) const ;
 
-
   // Segment defines a tape segment, a state, and a tape head
   struct Segment 
     {
@@ -109,9 +106,9 @@ public:
     int TapeHead ;
     } ;
 
-  // Transition defines the initial and final configurations of a tape segment.
+  // SegmentTransition defines the initial and final configurations of a tape segment.
   // The final tape head may lie outside the tape segment.
-  struct Transition
+  struct SegmentTransition
     {
     uint32_t nSteps ;
     Segment Initial ;
@@ -121,13 +118,13 @@ public:
   // Verification functions
   void CheckFollowOn (const Segment& Seg1, const Segment& Seg2) ;
   void CheckTape (const TuringMachine* TM, const TapeDescriptor& TD) ;
-  void CheckTransition (const Transition& Tr) const ;
+  void CheckTransition (const SegmentTransition& Tr) const ;
   void CheckWallTransition (TapeDescriptor TD0,
-    TapeDescriptor TD1, const Transition& Tr) ;
+    TapeDescriptor TD1, const SegmentTransition& Tr) ;
   void CheckRepeaterTransition (const TapeDescriptor& TD0,
-    const TapeDescriptor& TD1, const Transition& Tr) ;
-  void CheckLeftwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const Transition& Tr) ;
-  void CheckRightwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const Transition& Tr) ;
+    const TapeDescriptor& TD1, const SegmentTransition& Tr) ;
+  void CheckLeftwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const SegmentTransition& Tr) ;
+  void CheckRightwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const SegmentTransition& Tr) ;
   void CheckSegment (const TapeDescriptor& TD, const Segment& Seg, uint32_t Wall) ;
   void ExpandWallsLeftward (TapeDescriptor& TD0, TapeDescriptor& TD1,
     uint32_t Wall, int Amount) ;
@@ -146,6 +143,7 @@ public:
   uint32_t nMultiple ;
   uint32_t nPartitioned ;
   uint32_t nBells ;
+  uint32_t nHalters ;
 
   uint32_t MaxRepeaterPeriod ;
   uint32_t MaxRepeaterMachine ;
