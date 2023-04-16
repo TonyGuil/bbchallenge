@@ -431,34 +431,6 @@ bool BouncerDecider::FindRuns (Config* Cycle1, Config* Cycle2)
     RunData& R = RunDataArray[nRuns++] ;
 
     if (!FindRepeat (Cycle1, Cycle2, R)) return false ;
-#if 0
-RunData T ;
-if (FindRepeat (Cycle1, Cycle2, R))
-{
-if (!OldFindRepeat (Cycle1, Cycle2, T))
-for ( ; ; )
-{
-FindRepeat (Cycle1, Cycle2, R) ;
-OldFindRepeat (Cycle1, Cycle2, T) ;
-}
-if (T.Wall != R.Wall) TM_ERROR() ;
-if (T.WallSteps != R.WallSteps) TM_ERROR() ;
-if (T.Repeater != R.Repeater) TM_ERROR() ;
-if (T.RepeaterPeriod != R.RepeaterPeriod) TM_ERROR() ;
-if (T.RepeaterSteps != R.RepeaterSteps) TM_ERROR() ;
-if (T.Direction != R.Direction) TM_ERROR() ;
-}
-else
-{
-if (OldFindRepeat (Cycle1, Cycle2, T))
-for ( ; ; )
-{
-FindRepeat (Cycle1, Cycle2, R) ;
-OldFindRepeat (Cycle1, Cycle2, T) ;
-}
-return false ;
-}
-#endif
 
     if (nRuns == 1)
       {
@@ -562,98 +534,6 @@ bool BouncerDecider::FindRepeat (Config* Cycle1, Config* Cycle2, RunData& R)
       break ;
   if (Diff == 0) return false ;
   R.RepeaterSteps += Diff ;
-  if (Diff % R.RepeaterPeriod != 0)
-    {
-    if (R.Repeater[R.RepeaterSteps].State != 0) return false ;
-
-    // Wraparound
-    R.RepeaterSteps += R.RepeaterPeriod - Diff ;
-    }
-  else R.RepeaterPeriod = Diff ;
-
-  R.Direction = (R.Repeater[R.RepeaterSteps].TapeHead > R.Repeater[0].TapeHead) ? 1 : -1 ;
-
-  if (R.RepeaterPeriod > this -> MaxRepeaterPeriod)
-    {
-    this -> MaxRepeaterPeriod = R.RepeaterPeriod ;
-    MaxRepeaterMachine = SeedDatabaseIndex ;
-    }
-
-  return true ;
-  }
-
-bool BouncerDecider::OldFindRepeat (Config* Cycle1, Config* Cycle2, RunData& R)
-  {
-  memset (&R, 0, sizeof (R)) ;
-  R.Wall = Cycle2 ;
-
-  // Find the number of matching steps
-  uint32_t MatchLen ;
-  for (MatchLen = 0 ; ; MatchLen++)
-    if (Cycle1[MatchLen] != Cycle2[MatchLen]) break ;
-  if (Cycle2[MatchLen].State == 0) // Wrapped around
-    {
-    R.Wall = Cycle2 ;
-    R.WallSteps = MatchLen ;
-    return true ;
-    }
-
-  // Look for repeaters
-  //
-  // A repeater is _acceptable_ if it is repeated at least six times
-  // (including the first), and it covers at least 24 steps or MatchLen/2 steps,
-  // whichever is smaller. We can't just look for the acceptable repeater with
-  // the highest repeat count, because a run may have more than one repeat run:
-  //
-  //   W0 n0*R0 W1 n1*R1 W2
-  //
-  // In this case we want to give priority to R0, even if n1 > n0. So we reject
-  // R1 if it starts after the R0 run:
-
-  // These two values are the product of trial and error:
-  uint32_t MaxRepeaterPeriod = MatchLen / 4 ;
-  uint32_t MinRepeaterSteps = MatchLen / 4 ;
-
-  for (uint32_t RepeaterPeriod = 1 ; RepeaterPeriod < MaxRepeaterPeriod ; RepeaterPeriod++)
-    {
-    uint32_t p = RepeaterPeriod ;
-    uint32_t RepeaterStart = 0 ;
-    for ( ; ; )
-      {
-      while (Cycle2[p] == Cycle2[p - RepeaterPeriod]) p++ ;
-      if (p >= MatchLen && p - RepeaterStart >= MinRepeaterSteps)
-        {
-        uint32_t RepeaterCount = (p - RepeaterStart) / RepeaterPeriod ;
-        if (RepeaterCount >= 6)
-          {
-          // This repeater is acceptable. Does it start to the right of the
-          // best found so far?
-          if (R.Repeater == 0 || Cycle2 + RepeaterStart < R.Repeater + R.RepeaterSteps)
-            {
-            // No. Does it have a higher repeat count?
-            if (R.Repeater == 0 || RepeaterCount * R.RepeaterPeriod > R.RepeaterSteps)
-              {
-              // Yes, so save it as the best
-              R.WallSteps = RepeaterStart ;
-              R.Repeater = Cycle2 + RepeaterStart ;
-              R.RepeaterPeriod = RepeaterPeriod ;
-              R.RepeaterSteps = p - RepeaterStart ;
-              }
-            }
-          }
-        }
-      while (p < MatchLen && Cycle2[p] != Cycle2[p - RepeaterPeriod]) p++ ;
-      if (p >= MatchLen) break ;
-      RepeaterStart = p - RepeaterPeriod ;
-      }
-    }
-
-  if (R.Repeater == 0) return false ;
-
-  // Cycle2 should have a whole number of repeated segments before it matches Cycle1 again
-  uint32_t Diff = R.WallSteps + R.RepeaterSteps ;
-  if (Diff <= MatchLen) return false ;
-  Diff -= MatchLen ;
   if (Diff % R.RepeaterPeriod != 0)
     {
     if (R.Repeater[R.RepeaterSteps].State != 0) return false ;
