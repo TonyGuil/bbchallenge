@@ -151,36 +151,3 @@ bool FiniteAutomataReduction::ExtendNFA (const uint8_t* MachineSpec, Matrix R[2]
 
   return !(R[0][0] * a) ;
   }
-
-void FiniteAutomataReduction::MakeVerificationEntry (uint8_t* VerificationEntry)
-  {
-  if (VerificationEntry == 0) return ;
-
-  Save32 (VerificationEntry, SeedDatabaseIndex) ;
-  Save32 (VerificationEntry + 4, (uint32_t)Tag) ;
-  if (Tag == DeciderTag::FAR_DFA_ONLY)
-    {
-    Save32 (VerificationEntry + 8, 2 * DFA_States + 1) ;
-    VerificationEntry[12] = Direction ;
-    memcpy (VerificationEntry + 13, DFA, 2 * DFA_States) ;
-    }
-  else
-    {
-    uint32_t nBytes = (NFA_States + 7) >> 3 ;
-    Save32 (VerificationEntry + 8,
-      5 + 2 * DFA_States + (2 * NFA_States + 1) * nBytes) ;
-    VerificationEntry[12] = Direction ;
-    Save16 (VerificationEntry + 13, DFA_States) ;
-    Save16 (VerificationEntry + 15, NFA_States) ;
-    VerificationEntry += 17 ;
-    memcpy (VerificationEntry, DFA, 2 * DFA_States) ;
-    VerificationEntry += 2 * DFA_States ;
-    for (uint32_t r = 0 ; r <= 1 ; r++)
-      for (uint32_t i = 0 ; i < NFA_States ; i++)
-        {
-        memcpy (VerificationEntry, R[r][i].d, nBytes) ;
-        VerificationEntry += nBytes ;
-        }
-    memcpy (VerificationEntry, a.d, nBytes) ;
-    }
-  }

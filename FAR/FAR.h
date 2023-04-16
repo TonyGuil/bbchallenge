@@ -44,7 +44,6 @@ public:
 
   bool RunDecider (uint32_t DFA_States, const uint8_t* MachineSpec, uint8_t* VerificationEntry) ;
   bool ExtendNFA (const uint8_t* MachineSpec, Matrix R[2], Vector& a, uint32_t k) ;
-  void MakeVerificationEntry (uint8_t* VerificationEntry) ;
 
   void Verify (const uint8_t* MachineSpec) ;
   void ReadVerificationInfo() ;
