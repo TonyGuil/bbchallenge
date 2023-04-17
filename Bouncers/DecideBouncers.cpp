@@ -138,8 +138,8 @@ int main (int argc, char** argv)
       for (uint32_t j = 0 ; j < ChunkSizeArray[i] ; j++)
         MachineIndexList[i][j] = Reader.Next (MachineSpecList[i] + j * Reader.MachineSpecSize) ;
 
-      if (Params.nThreads == 1)
-        DeciderArray[0] -> ThreadFunction (ChunkSizeArray[i], MachineIndexList[i], MachineSpecList[i], Reader.MachineSpecSize,
+      if (Params.nThreads == 1) DeciderArray[1] -> ThreadFunction (ChunkSizeArray[i],
+        MachineIndexList[i], MachineSpecList[i], Reader.MachineSpecSize,
           VerificationEntryList[i], VERIF_AVERAGE_LENGTH * DEFAULT_CHUNK_SIZE) ;
       ThreadList[i] = new std::thread (&BouncerDecider::ThreadFunction, DeciderArray[i],
         ChunkSizeArray[i], MachineIndexList[i], MachineSpecList[i], Reader.MachineSpecSize,
