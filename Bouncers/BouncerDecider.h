@@ -112,7 +112,6 @@ public:
   PartitionData PartitionDataArray[MAX_PARTITIONS] ;
 
   bool FindRepeat (Config* Run1, Config* Run2, RunData& R) ;
-  bool OldFindRepeat (Config* Run1, Config* Run2, RunData& R) ;
 
   bool AssignPartitions() ;
   bool EqualiseRepeaters() ;
