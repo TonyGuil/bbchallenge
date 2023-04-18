@@ -85,6 +85,7 @@ int main (int argc, char** argv)
   for (uint32_t i = 0 ; i < Reader.nMachines ; i++)
     MachineIndexList[i] = Reader.Next (MachineSpecList + i * Reader.MachineSpecSize) ;
 
+  // Run inline if single thread (for ease of debugging)
   if (Params.nThreads == 1) ThreadFunction() ;
   else
     {

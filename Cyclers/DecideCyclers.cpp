@@ -203,6 +203,7 @@ int main (int argc, char** argv)
         }
       nTimeLimitedComplete += ChunkSize[i] ;
 
+      // Run inline if single thread (for ease of debugging)
       if (Params.nThreads == 1) CyclerArray[i] -> ThreadFunction (ChunkSize[i],
         MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i]) ;
       else ThreadList[i] = new std::thread (&Cycler::ThreadFunction,

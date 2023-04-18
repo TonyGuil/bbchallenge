@@ -138,6 +138,7 @@ int main (int argc, char** argv)
       for (uint32_t j = 0 ; j < ChunkSizeArray[i] ; j++)
         MachineIndexList[i][j] = Reader.Next (MachineSpecList[i] + j * Reader.MachineSpecSize) ;
 
+      // Run inline if single thread (for ease of debugging)
       if (Params.nThreads == 1) DeciderArray[0] -> ThreadFunction (ChunkSizeArray[0],
         MachineIndexList[0], MachineSpecList[0], Reader.MachineSpecSize,
           VerificationEntryList[0], VERIF_AVERAGE_LENGTH * DEFAULT_CHUNK_SIZE) ;

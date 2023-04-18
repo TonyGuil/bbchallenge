@@ -161,6 +161,7 @@ int main (int argc, char** argv)
         }
       nSpaceLimitedComplete += ChunkSize[i] ;
 
+      // Run inline if single thread (for ease of debugging)
       if (Params.nThreads == 1) DeciderArray[i] -> ThreadFunction (ChunkSize[i],
         MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i]) ;
       else ThreadList[i] = new std::thread (&TranslatedCycler::ThreadFunction,

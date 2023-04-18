@@ -302,15 +302,21 @@ int main (int argc, char** argv)
       for (uint32_t j = 0 ; j < ChunkSizeArray[i] ; j++)
         MachineIndexList[i][j] = Reader.Next (MachineSpecList[i] + j * Reader.MachineSpecSize) ;
 
-      ThreadList[i] = new std::thread (&HaltingSegment::ThreadFunction, DeciderArray[i],
+      // Run inline if single thread (for ease of debugging)
+      if (Params.nThreads == 1) DeciderArray[i] -> ThreadFunction (ChunkSizeArray[i],
+        MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i]) ;
+      else ThreadList[i] = new std::thread (&HaltingSegment::ThreadFunction, DeciderArray[i],
         ChunkSizeArray[i], MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i]) ;
       }
 
     for (uint32_t i = 0 ; i < Params.nThreads ; i++)
       {
-      // Wait for thread i to finish
-      ThreadList[i] -> join() ;
-      delete ThreadList[i] ;
+      if (Params.nThreads != 1)
+        {
+        // Wait for thread i to finish
+        ThreadList[i] -> join() ;
+        delete ThreadList[i] ;
+        }
 
       const uint8_t* MachineSpec = MachineSpecList[i] ;
       const uint8_t* VerificationEntry = VerificationEntryList[i] ;

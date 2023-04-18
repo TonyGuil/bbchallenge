@@ -21,10 +21,6 @@ bool FiniteAutomataReduction::RunDecider (uint32_t DFA_States, const uint8_t* Ma
 
   for (Direction = 0 ; Direction <= 1 ; Direction++)
     {
-    RStack[0][0].SetBitWidth (NFA_States) ;
-    RStack[0][1].SetBitWidth (NFA_States) ;
-    aStack[0].SetBitWidth (NFA_States) ;
-
     // 5'
     RStack[0][0][HALT_State].SetBit (HALT_State) ;
     RStack[0][1][HALT_State].SetBit (HALT_State) ;
@@ -62,7 +58,7 @@ bool FiniteAutomataReduction::RunDecider (uint32_t DFA_States, const uint8_t* Ma
           R[1] = RStack[k][1] ;
           a = aStack[k] ;
 
-          Verify (MachineSpec) ;
+          Verify (MachineSpec) ; // Should never fail
 
           VerificationEntry[0] = Direction ;
           memcpy (VerificationEntry + 1, DFA, 2 * DFA_States) ;
@@ -97,6 +93,7 @@ bool FiniteAutomataReduction::ExtendNFA (const uint8_t* MachineSpec, Matrix R[2]
   // 9'
   uint32_t i = (k - 1) / 2 ;
   uint32_t w = (k - 1) & 1 ;
+  uint32_t d = DFA[i][w] ;
   p = MachineSpec ;
   for (uint8_t f = 0 ; f < MachineStates ; f++) // A-E or A-F
     for (uint8_t r = 0 ; r <= 1 ; r++)
@@ -105,7 +102,6 @@ bool FiniteAutomataReduction::ExtendNFA (const uint8_t* MachineSpec, Matrix R[2]
       if (T.Next != 0 && T.Move == Direction && T.Write == w) // Right-rule
         {
         uint8_t t = T.Next - 1 ; // Convert state from 1-based to 0-based
-        uint32_t d = DFA[i][w] ;
         R[r][MachineStates*i + f].SetBit (MachineStates*d + t) ;
         }
       }
