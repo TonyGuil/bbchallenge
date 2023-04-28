@@ -2,7 +2,7 @@
 //
 // Common command-line parameters for all deciders:
 //
-//   -N<states>            Machine states (5 or 6)
+//   -N<states>            Machine states (2, 3, 4, 5, or 6)
 //   -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
 //   -I<input file>        Input file: list of machines to be analysed (default=all machines)
 //   -V<verification file> Output file: verification data for decided machines
@@ -34,11 +34,9 @@ public:
   virtual void OpenFiles()
     {
     fpDatabase = OpenFile (DatabaseFilename, "rb") ;
-    fpInput = 0 ; // Not used in Verifiers
-    fpVerify = OpenFile (VerificationFilename, Verifying() ? "rb" : "wb") ;
     }
 
-  virtual void PrintHelp() ;
+  virtual void PrintHelp() const ;
   virtual void PrintHelpAndExit (int status) = 0 ;
 
   static FILE* OpenFile (const std::string& Filename, const char* Access)
@@ -50,7 +48,7 @@ public:
     return fp ;
     }
 
-  virtual bool Verifying() const { return true ; }
+  virtual bool Verifying() const = 0 ;
 
   FILE* fpDatabase ;
   FILE* fpInput ;
@@ -69,7 +67,7 @@ public:
   virtual bool ParseParam (const char* arg) ;
   virtual void CheckParameters() override ;
 
-  virtual void PrintHelp() override ;
+  virtual void PrintHelp() const override ;
 
   virtual void OpenFiles() override
     {
@@ -82,4 +80,20 @@ public:
   virtual bool Verifying() const override { return false ; }
 
   FILE* fpUndecided ;
+  } ;
+
+class VerifierParams : public CommonParams
+  {
+public:
+  virtual void CheckParameters() ;
+
+  virtual void PrintHelp() const override ;
+
+  virtual void OpenFiles()
+    {
+    fpInput = 0 ; // Not used in Verifiers
+    fpVerify = OpenFile (VerificationFilename, "rb") ;
+    }
+
+  virtual bool Verifying() const override { return true ; }
   } ;

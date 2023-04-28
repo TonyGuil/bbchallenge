@@ -115,6 +115,11 @@ void DeciderParams::CheckParameters()
     }
   }
 
+void VerifierParams::CheckParameters()
+  {
+  CommonParams::CheckParameters() ;
+  }
+
 uint32_t CommonParams::ParseInt (const char* arg, const char* s)
   {
   if (*s == 0) printf ("%s: integer expected\n", arg), exit (1) ;
@@ -123,23 +128,30 @@ uint32_t CommonParams::ParseInt (const char* arg, const char* s)
   return atoi (s) ;
   }
 
-void CommonParams::PrintHelp()
+void CommonParams::PrintHelp() const
   {
   printf (R"*RAW*(
   <param>: -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
-           -N<states>            Machine states (2, 3, 4, 5, or 6)
-           -V<verification file> Output file: verification data for decided machines)*RAW*") ;
+           -N<states>            Machine states (2, 3, 4, 5, or 6))*RAW*") ;
   }
 
-void DeciderParams::PrintHelp()
+void DeciderParams::PrintHelp() const
   {
   CommonParams::PrintHelp() ;
   printf (R"*RAW*(
            -I<input file>        Input file: list of machines to be analysed (default=all machines)
-           -U<undecided file>    Output file: remaining undecided machines
            -X<test machine>      Machine to test
            -M<machine spec>      Compact machine code (ASCII spec) to test
            -L<machine limit>     Max no. of machines to test
+           -V<verification file> Output file: verification data for decided machines
+           -U<undecided file>    Output file: remaining undecided machines
            -H<threads>           Number of threads to use
            -O                    Print trace output)*RAW*") ;
+  }
+
+void VerifierParams::PrintHelp() const
+  {
+  CommonParams::PrintHelp() ;
+  printf (R"*RAW*(
+           -V<verification file> Input file: verification data to be checked)*RAW*") ;
   }
