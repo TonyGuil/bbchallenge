@@ -202,7 +202,7 @@ int main (int argc, char** argv)
   printf ("\n") ;
 
   if (Params.fpUndecided) fclose (Params.fpUndecided) ;
-  fclose (Params.fpInput) ;
+  if (Params.fpInput) fclose (Params.fpInput) ;
 
   Timer = clock() - Timer ;
 
