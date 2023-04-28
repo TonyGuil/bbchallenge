@@ -83,3 +83,7 @@ public:
 
   FILE* fpUndecided ;
   } ;
+
+class VerifierParams : public CommonParams
+  {
+  } ;
