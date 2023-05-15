@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <limits.h>
 #include <vector>
 #include "../TuringMachine.h"
 
@@ -74,8 +73,8 @@ public:
 
     const Bouncer* B ;
   
-    std::vector<uint8_t> Wall[MAX_PARTITIONS + 1] ;
-    std::vector<uint8_t> Repeater[MAX_PARTITIONS] ;
+    ustring Wall[MAX_PARTITIONS + 1] ;
+    ustring Repeater[MAX_PARTITIONS] ;
     uint32_t RepeaterCount[MAX_PARTITIONS] ;
     uint8_t State ;
     int Leftmost ;
@@ -86,7 +85,11 @@ public:
 
   TapeDescriptor InitialTape ;
 
-  void CheckTapesEquivalent (const TapeDescriptor& TD0, const TapeDescriptor& TD1) const ;
+  bool TestTapesEquivalent (const TapeDescriptor& TD0, const TapeDescriptor& TD1) const ;
+  void CheckTapesEquivalent (const TapeDescriptor& TD0, const TapeDescriptor& TD1) const
+    {
+    if (!TestTapesEquivalent (TD0, TD1)) TM_ERROR() ;
+    }
   struct TapePosition
     {
     bool InWall ;
@@ -102,7 +105,7 @@ public:
   // Segment defines a tape segment, a state, and a tape head
   struct Segment 
     {
-    std::vector<uint8_t> Tape ;
+    ustring Tape ;
     uint8_t State ;
     int TapeHead ;
     } ;
@@ -118,21 +121,13 @@ public:
 
   // Verification functions
   void CheckFollowOn (const Segment& Seg1, const Segment& Seg2) ;
+  bool TestFollowOn (const Segment& Seg1, const Segment& Seg2) ;
   void CheckTape (const TuringMachine* TM, const TapeDescriptor& TD) ;
   void CheckTransition (const SegmentTransition& Tr) const ;
-  void CheckWallTransition (TapeDescriptor TD0,
-    TapeDescriptor TD1, const SegmentTransition& Tr) ;
-  void CheckRepeaterTransition (const TapeDescriptor& TD0,
-    const TapeDescriptor& TD1, const SegmentTransition& Tr) ;
-  void CheckLeftwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const SegmentTransition& Tr) ;
-  void CheckRightwardRepeater (TapeDescriptor TD0, TapeDescriptor TD1, const SegmentTransition& Tr) ;
-  void CheckSegment (const TapeDescriptor& TD, const Segment& Seg, uint32_t Wall) ;
-  void ExpandWallsLeftward (TapeDescriptor& TD0, TapeDescriptor& TD1,
-    uint32_t Wall, int Amount) ;
-  void ExpandWallsRightward (TapeDescriptor& TD0, TapeDescriptor& TD1,
-    uint32_t Wall, int Amount) ;
   void ExpandTapeLeftward (TapeDescriptor& TD, int Amount) ;
   void ExpandTapeRightward (TapeDescriptor& TD, int Amount) ;
+
+  virtual bool Verifying() const { return false ; }
 
   bool TraceOutput = false ;
 

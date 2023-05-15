@@ -79,8 +79,8 @@ public:
   int8_t TB_Direction ;
   uint32_t TB_Size ;
   int TB_Outermost ; // Leftmost or Rightmost
-  std::vector<uint8_t> TB_Wall ;
-  std::vector<uint8_t> TB_Repeater ;
+  ustring TB_Wall ;
+  ustring TB_Repeater ;
   uint32_t TB_RepeaterCount ;
   bool MakeTranslatedBouncerData() ;
 
@@ -128,12 +128,18 @@ public:
 
   RunDataTransitions RunDescriptorArray[MAX_RUNS] ;
 
+  enum class ORA_Result { OK, RETRY, ABORT } ;
+  ORA_Result ConstructTransitions (TapeDescriptor& InitialTape,
+    uint32_t i, const TapeDescriptor& TD, RunDataTransitions& RDT) ;
+  void CheckTransitions (TapeDescriptor& InitialTape,uint32_t i,
+    TapeDescriptor& TD, const RunDataTransitions& RDT) ;
+  ORA_Result MoveRepeaterIntoWall (TapeDescriptor& InitialTape,
+    const TapeDescriptor& TD, bool RightHandEnd) ;
+
   void ConvertRunData (RunDataTransitions& To, const RunData& From) ;
-  bool AnalyseTape_Wall (const TuringMachine* TM, TapeDescriptor& TD, uint32_t CurrentWall,
-    const SegmentTransition& Tr, int Leftmost, int Rightmost) ;
-  bool AnalyseTape_Repeater (const TuringMachine* TM, TapeDescriptor& TD, uint32_t CurrentWall,
+  ORA_Result AnalyseTape (const TuringMachine* TM, TapeDescriptor& TD, uint32_t CurrentWall,
     uint32_t CurrentPartition, const SegmentTransition& Tr, int Leftmost, int Rightmost) ;
-  void DecrementRepeaterCount (uint32_t Partition) ;
+  ORA_Result DecrementRepeaterCount (uint32_t Partition) ;
   void GetMaxWallExtents() ;
   bool GetRepeaterExtent_leftward (const TuringMachine* TM, uint32_t Partition,
     int& SequenceStart, int& SequenceEnd, int Leftmost, int Rightmost) ;

@@ -294,7 +294,7 @@ void BouncerDecider::ThreadFunction (int nMachines, const uint32_t* MachineIndex
     {
     SeedDatabaseIndex = *MachineIndexList++ ;
     Save32 (VerificationEntryList, SeedDatabaseIndex) ;
-    Save32 (VerificationEntryList + 4, uint32_t (DeciderTag::BOUNCER)) ;
+    Save32 (VerificationEntryList + 4, uint32_t (DeciderTag::NEW_BOUNCER)) ;
     if (RunDecider (MachineSpecList, VerificationEntryList))
       VerificationEntryList += VERIF_HEADER_LENGTH + Load32 (VerificationEntryList + 8) ;
     else

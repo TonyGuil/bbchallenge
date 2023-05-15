@@ -8,7 +8,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 #include <bit>
+
+// ustring and ustring_view are std::string and std::string_view for unsigned chars
+typedef std::basic_string<uint8_t> ustring ;
+typedef std::basic_string_view<uint8_t> ustring_view ;
 
 #define MAX_SPACE          12289
 #define MAX_MACHINE_STATES 6
@@ -37,6 +42,7 @@ enum class DeciderTag : uint32_t
   BACKWARD_REASONING      = 4,
   HALTING_SEGMENT         = 5,
   BOUNCER                 = 6,
+  NEW_BOUNCER             = 7,
 
   // Finite Automata Reduction variants
   FAR_DFA_ONLY            = 10,

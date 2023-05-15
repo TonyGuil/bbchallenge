@@ -14,21 +14,20 @@
 //   int InitialLeftmost  -- Leftmost cell visited at start of Cycle
 //   int InitialRightmost -- Rightmost cell visited at start of Cycle
 // 
-//   uint FinalSteps      -- Steps to reach the end of the Cycle
-//   int FinalLeftmost    -- Leftmost cell visited at end of Cycle
-//   int FinalRightmost   -- Rightmost cell visited at end of Cycle
-// 
 //   ushort RepeaterCount[nPartitions] -- the Repeater count for each partition
 //                                     -- remains constant throughout the cycle
 //   TapeDescriptor InitialTape   -- Tape contents and state at start of Cycle
 //   RunDescriptor RunList[nRuns] -- Definition of each Run
+//
+//   uint FinalSteps      -- Steps to reach the end of the Cycle
+//   int FinalLeftmost    -- Leftmost cell visited at end of Cycle
+//   int FinalRightmost   -- Rightmost cell visited at end of Cycle
+//   TapeDescriptor FinalTape  -- Tape contents and state at end of Cycle
 // 
 // RunDescriptor:
 //   ubyte Partition -- Partiton which the Repeaters traverse
 //   SegmentTransition RepeaterTransition
-//   TapeDescriptor TD0 -- Tape contents and state after executing the RepeaterTransitions
 //   SegmentTransition WallTransition
-//   TapeDescriptor TD1 -- Tape contents and state after executing the WallTransition
 // 
 // SegmentTransition: -- defines a transition from an initial tape segment to a final tape segment
 //   ushort nSteps
@@ -63,8 +62,6 @@
 
 #include "BouncerVerifier.h"
 #include "../Params.h"
-
-#define VERIF_INFO_LENGTH 32
 
 class CommandLineParams : public VerifierParams
   {
@@ -108,9 +105,13 @@ int main (int argc, char** argv)
 
     switch (DeciderTag (Read32 (Params.fpVerify)))
       {
-      case DeciderTag::BOUNCER:
+      case DeciderTag::NEW_BOUNCER:
         Verifier.Verify (Params.fpVerify) ;
         break ;
+
+      case DeciderTag::BOUNCER:
+        printf ("\nDecider tag BOUNCER (6) no longer supported!\n") ;
+        exit (1) ;
 
       case DeciderTag::HALT:
         Verifier.VerifyHalter (Params.fpVerify) ;

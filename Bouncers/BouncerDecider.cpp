@@ -176,8 +176,7 @@ bool BouncerDecider::DetectRepetition (const Record* LatestRecord, uint8_t State
     if (!AssignPartitions()) continue ;
     if (!EqualiseRepeaters()) continue ;
     if (!MakeRunDescriptors()) continue ;
-    if (!CheckRuns())
-      TM_ERROR() ;
+    if (!CheckRuns()) TM_ERROR() ;
 
     if (TraceOutput)
       {
@@ -194,7 +193,8 @@ bool BouncerDecider::DetectRepetition (const Record* LatestRecord, uint8_t State
 bool BouncerDecider::BuildVerificationData (uint8_t* VerificationEntry)
   {
   uint32_t n = RunDataArray[0].Repeater - ConfigWorkspace ;
-  for (uint32_t i = 0 ; i < n ; i++) Step() ;
+  for (uint32_t i = 0 ; i < n ; i++)
+    if (Step() != StepResult::OK) TM_ERROR() ;
   if (TapeHead != RunDataArray[0].Repeater[0].TapeHead) TM_ERROR() ;
 
   int InitialLeftmost = Leftmost ;
@@ -221,8 +221,6 @@ bool BouncerDecider::BuildVerificationData (uint8_t* VerificationEntry)
     if (TapeHead < Cycle2Leftmost) Cycle2Leftmost = TapeHead ;
     if (TapeHead > Cycle2Rightmost) Cycle2Rightmost = TapeHead ;
     }
-  int FinalLeftmost = std::min (Cycle2Leftmost, InitialLeftmost) ;
-  int FinalRightmost = std::max (Cycle2Rightmost, InitialRightmost) ;
 
   if (!MakeTranslatedBouncerData()) return false ;
   GetMaxWallExtents() ;
@@ -258,117 +256,191 @@ TryAgain:
   if (RunDataArray[0].Direction == -1) Wall++ ;
   InitialTape.Leftmost = TapeLeftmost ;
   InitialTape.Rightmost = TapeRightmost ;
-  if (!AnalyseTape_Repeater (Clone, InitialTape, Wall, RunDataArray[0].Partition,
+  switch (AnalyseTape (Clone, InitialTape, Wall, RunDataArray[0].Partition,
     RunDescriptorArray[0].RepeaterTransition, Clone -> Leftmost, Clone -> Rightmost))
-      goto TryAgain ;
+      {
+      case ORA_Result::OK: break ;
+      case ORA_Result::RETRY: goto TryAgain ;
+      case ORA_Result::ABORT: return false ;
+      }
+
   CheckTape (Clone, InitialTape) ;
   if (RemoveGap (InitialTape, RunDescriptorArray[0].RepeaterTransition))
     CheckTape (Clone, InitialTape) ;
   if (TruncateWall (InitialTape, RunDescriptorArray[0].RepeaterTransition))
     CheckTape (Clone, InitialTape) ;
 
-  uint32_t pVerif = 12 ;
+  uint32_t pVerif = 0 ;
+  uint32_t pFinal = 0 ;
+
+  TapeDescriptor TD (this) ;
+  RunDataTransitions RDT ;
+
+  TuringMachine TM (MachineStates, SpaceLimit) ;
+  int WallOffset = 0 ;
+  for ( ; ; )
+    {
+    TM = *Clone ;
+    TD = InitialTape ;
+    CheckTape (&TM, TD) ;
+    Segment First, Prev ;
+    uint32_t StepTarget = 0 ;
+    uint32_t i ; for (i = 0 ; i < nRuns ; i++)
+      {
+      ORA_Result res = ConstructTransitions (InitialTape, i, TD, RDT) ;
+      if (res == ORA_Result::RETRY) break ;
+      if (res == ORA_Result::ABORT) return false ;
+  
+      if (i == 0) First = RDT.RepeaterTransition.Initial ;
+      else CheckFollowOn (RDT.WallTransition.Initial, Prev) ;
+      CheckFollowOn (RDT.RepeaterTransition.Initial, RDT.WallTransition.Final) ;
+      CheckFollowOn (RDT.RepeaterTransition.Final, RDT.RepeaterTransition.Initial) ;
+      CheckTransitions (InitialTape, i, TD, RDT) ;
+  
+      for (uint32_t j = 0 ; j < RDT.WallTransition.nSteps ; j++)
+        if (TM.Step() != StepResult::OK) TM_ERROR() ;
+      if (i == 0)
+        {
+        if (TM.Leftmost < InitialLeftmost)
+          {
+          ExpandTapeLeftward (TD, InitialLeftmost - TM.Leftmost) ;
+          ExpandTapeLeftward (InitialTape, InitialLeftmost - TM.Leftmost) ;
+          InitialLeftmost = TM.Leftmost ;
+          }
+        if (TM.Rightmost > InitialRightmost)
+          {
+          ExpandTapeRightward (TD, TM.Rightmost - InitialRightmost) ;
+          ExpandTapeRightward (InitialTape, TM.Rightmost - InitialRightmost) ;
+          InitialRightmost = TM.Rightmost ;
+          }
+        *Clone = TM ;
+        StepTarget = TM.StepCount + StepCount2 ;
+        if (VerificationEntry)
+          {
+          pVerif = 12 ; // Skip MachineIndex, DeciderTag, VerificationLength
+          VerificationEntry[pVerif++] = (uint8_t)Type ;
+          VerificationEntry[pVerif++] = nPartitions ;
+          pVerif += Save16 (VerificationEntry + pVerif, nRuns) ;
+          pVerif += Save32 (VerificationEntry + pVerif, TM.StepCount) ;
+          pVerif += Save32 (VerificationEntry + pVerif, TM.Leftmost) ;
+          pVerif += Save32 (VerificationEntry + pVerif, TM.Rightmost) ;
+
+          // Save space for FinalSteps, FinalLeftmost, FinalRightmost
+          pFinal = pVerif ;
+          pVerif += 12 ;
+
+          for (uint32_t j = 0 ; j < nPartitions ; j++)
+            pVerif += Save16 (VerificationEntry + pVerif, InitialTape.RepeaterCount[j]) ;
+          pVerif += WriteTapeDescriptor (VerificationEntry + pVerif, &TM, InitialTape) ;
+          }
+        }
+      uint32_t RepeaterCount = TD.RepeaterCount[RDT.Partition] ;
+      for (uint32_t j = 0 ; j < RepeaterCount * RDT.RepeaterTransition.nSteps ; j++)
+        if (TM.Step() != StepResult::OK) TM_ERROR() ;
+      CheckTape (&TM, TD) ;
+
+      if (VerificationEntry)
+        {
+        if (i) pVerif += WriteTransition (VerificationEntry + pVerif, RDT.WallTransition) ;
+        VerificationEntry[pVerif++] = RDT.Partition ;
+        pVerif += WriteTransition (VerificationEntry + pVerif, RDT.RepeaterTransition) ;
+        }
+
+      Prev = RDT.RepeaterTransition.Final ;
+      }
+
+    if (i == nRuns)
+      {
+      if (TM.StepCount > StepTarget) return false ;
+
+      // Execute the last few steps to get back to the start
+      WallOffset = TM.TapeHead ;
+      RDT.WallTransition.nSteps = StepTarget - TM.StepCount ;
+      int WallLeftmost = TM.TapeHead - TD.TapeHeadOffset ;
+      int WallRightmost = WallLeftmost + TD.Wall[TD.TapeHeadWall].size() - 1 ;
+      while (TM.StepCount < StepTarget)
+        {
+        if (TD.TapeHeadWall == 0)
+          {
+          if (TM.TapeHead > WallRightmost)
+            {
+            if (MoveRepeaterIntoWall (InitialTape, TD, false) == ORA_Result::ABORT)
+              return false ;
+            break ;
+            }
+          }
+        else
+          {
+          if (TM.TapeHead < WallLeftmost)
+            {
+            if (MoveRepeaterIntoWall (InitialTape, TD, true) == ORA_Result::ABORT)
+              return false ;
+            break ;
+            }
+          }
+        if (TM.Step() != StepResult::OK) TM_ERROR() ;
+        }
+
+      if (TM.StepCount == StepTarget) break ;
+      }
+    }
+
+  if (TM.Leftmost < TD.Leftmost)
+    {
+    ExpandTapeLeftward (TD, TD.Leftmost - TM.Leftmost) ;
+    ExpandTapeLeftward (InitialTape, InitialTape.Leftmost - TM.Leftmost) ;
+    }
+  if (TM.Rightmost > TD.Rightmost)
+    {
+    ExpandTapeRightward (TD, TM.Rightmost - TD.Rightmost) ;
+    ExpandTapeRightward (InitialTape, TM.Rightmost - InitialTape.Rightmost) ;
+    }
+  WallOffset -= TD.TapeHeadOffset ;
+
+  RDT.WallTransition.Initial.State = TD.State ;
+  RDT.WallTransition.Initial.Tape = TD.Wall[TD.TapeHeadWall] ;
+  RDT.WallTransition.Initial.TapeHead = TD.TapeHeadOffset ;
+
+  memcpy (&TD.Wall[TD.TapeHeadWall][0], TM.Tape + WallOffset,
+    TD.Wall[TD.TapeHeadWall].size()) ;
+  TD.State = RDT.WallTransition.Final.State = TM.State ;
+  RDT.WallTransition.Final.Tape = TD.Wall[TD.TapeHeadWall] ;
+  TD.TapeHeadOffset = RDT.WallTransition.Final.TapeHead = TM.TapeHead - WallOffset ;
+
   if (VerificationEntry)
     {
-    VerificationEntry[pVerif++] = (uint8_t)Type ;
-    VerificationEntry[pVerif++] = nPartitions ;
-    pVerif += Save16 (VerificationEntry + pVerif, nRuns) ;
-    pVerif += Save32 (VerificationEntry + pVerif, StepCount) ;
-    pVerif += Save32 (VerificationEntry + pVerif, InitialLeftmost) ;
-    pVerif += Save32 (VerificationEntry + pVerif, InitialRightmost) ;
-    pVerif += Save32 (VerificationEntry + pVerif, StepCount + StepCount2) ;
-    pVerif += Save32 (VerificationEntry + pVerif, FinalLeftmost) ;
-    pVerif += Save32 (VerificationEntry + pVerif, FinalRightmost) ;
-    for (uint32_t j = 0 ; j < nPartitions ; j++)
-      pVerif += Save16 (VerificationEntry + pVerif, PartitionDataArray[j].RepeaterCount) ;
-    pVerif += WriteTapeDescriptor (VerificationEntry + pVerif, Clone, InitialTape) ;
+    pVerif += WriteTransition (VerificationEntry + pVerif, RDT.WallTransition) ;
+
+    // Save FinalSteps, FinalLeftmost, FinalRightmost in reserved space
+    pFinal += Save32 (VerificationEntry + pFinal, TM.StepCount) ;
+    pFinal += Save32 (VerificationEntry + pFinal, TM.Leftmost) ;
+    pFinal += Save32 (VerificationEntry + pFinal, TM.Rightmost) ;
+
+    pVerif += WriteTapeDescriptor (VerificationEntry + pVerif, &TM, TD) ;
     }
 
-  TapeDescriptor TD0 (this), TD1 (InitialTape) ;
-  TD0.Leftmost = TapeLeftmost ;
-  TD0.Rightmost = TapeRightmost ;
-
-  for (uint32_t i = 0 ; i < nRuns ; i++)
-    {
-    const RunData& RD = RunDataArray[i] ;
-
-    for (uint32_t j = 0 ; j < RD.RepeaterSteps ; j++)
-      if (Clone -> Step() != StepResult::OK) TM_ERROR() ;
-    Wall = RunDataArray[i].Partition ;
-    if (RunDataArray[i].Direction == 1) Wall++ ;
-    if (!AnalyseTape_Wall (Clone, TD0, Wall,
-      RunDescriptorArray[i].WallTransition, Clone -> Leftmost, Clone -> Rightmost))
-        goto TryAgain ;
-    CheckTape (Clone, TD0) ;
-    CheckRepeaterTransition (TD1, TD0, RunDescriptorArray[i].RepeaterTransition) ;
-
-    if (VerificationEntry)
-      {
-      if (pVerif + 10000 > VERIF_INFO_MAX_LENGTH) TM_ERROR() ;
-      VerificationEntry[pVerif++] = RD.Partition ;
-      pVerif += WriteTransition (VerificationEntry + pVerif,
-        RunDescriptorArray[i].RepeaterTransition) ;
-      pVerif += WriteTapeDescriptor (VerificationEntry + pVerif, Clone, TD0) ;
-      }
-
-    for (uint32_t j = 0 ; j < RD.WallSteps ; j++)
-      if (Clone -> Step() != StepResult::OK) TM_ERROR() ;
-    if (!AnalyseTape_Repeater (Clone, TD1, Wall, RunDataArray[(i + 1) % nRuns].Partition,
-      RunDescriptorArray[(i + 1) % nRuns].RepeaterTransition, Clone -> Leftmost, Clone -> Rightmost))
-        goto TryAgain ;
-    CheckTape (Clone, TD1) ;
-    if (i < nRuns - 1)
-      {
-      if (RemoveGap (TD1, RunDescriptorArray[i + 1].RepeaterTransition))
-        CheckTape (Clone, TD1) ;
-      if (TruncateWall (TD1, RunDescriptorArray[i + 1].RepeaterTransition))
-        CheckTape (Clone, TD1) ;
-      }
-    CheckWallTransition (TD0, TD1, RunDescriptorArray[i].WallTransition) ;
-
-    if (VerificationEntry)
-      {
-      if (pVerif + 10000 > VERIF_INFO_MAX_LENGTH) TM_ERROR() ;
-      pVerif += WriteTransition (VerificationEntry + pVerif,
-        RunDescriptorArray[i].WallTransition) ;
-      pVerif += WriteTapeDescriptor (VerificationEntry + pVerif, Clone, TD1) ;
-      }
-    }
-
-  if (TraceOutput)
-    {
-    printf ("\n") ;
-    PrintTape (InitialTape) ;
-    }
-
-  FinalTape = TD1 ;
-
+  // Augment each repeater run in InitialTape by one repeater
   for (uint32_t i = 0 ; i < nPartitions ; i++)
     InitialTape.Wall[i].insert (InitialTape.Wall[i].end(),
       InitialTape.Repeater[i].begin(), InitialTape.Repeater[i].end()) ;
 
+  // Extend each end where appropriate
   int LeftmostShift = Cycle1Leftmost - Cycle2Leftmost ;
   if (LeftmostShift > 0)
     {
     InitialTape.Leftmost -= LeftmostShift ;
-    ExpandTapeLeftward (FinalTape, LeftmostShift) ;
+    ExpandTapeLeftward (TD, LeftmostShift) ;
     }
 
   int RightmostShift = Cycle2Rightmost - Cycle1Rightmost ;
   if (RightmostShift > 0)
     {
     InitialTape.Rightmost += RightmostShift ;
-    ExpandTapeRightward (FinalTape, RightmostShift) ;
+    ExpandTapeRightward (TD, RightmostShift) ;
     }
-  CheckTape (Clone, FinalTape) ;
 
-  CheckTapesEquivalent (InitialTape, FinalTape) ;
-
-  if (TraceOutput)
-    {
-    printf ("\n") ;
-    PrintTape (FinalTape) ;
-    }
+  if (!TestTapesEquivalent (InitialTape, TD)) return false ;
+  CheckTape (&TM, InitialTape) ;
 
   if (nRuns > nRunsMax)
     {
@@ -501,7 +573,8 @@ bool BouncerDecider::FindRepeat (Config* Cycle1, Config* Cycle2, RunData& R)
   // A repeater is _acceptable_ if it is repeated at least MinRepeaterCount times
   // (including the first), and it covers at least MatchLen/4 steps.
   // MinRepeaterCount depends on MachineStates:
-  uint32_t MinRepeaterCount = (MachineStates == 5) ? 5 : 15 ;
+////TEMP  uint32_t MinRepeaterCount = (MachineStates == 5) ? 5 : 15 ;
+uint32_t MinRepeaterCount = 5 ;
 
   // These two values are the product of trial and error:
   uint32_t MaxRepeaterPeriod = MatchLen / 4 ;
@@ -759,9 +832,9 @@ void BouncerDecider::ConvertRunData (RunDataTransitions& To, const RunData& From
     {
     const Config& C = From.Repeater[i] ;
     int TapeHead = C.TapeHead - Leftmost ;
-    if (To.RepeaterTransition.Initial.Tape.at(TapeHead) == TAPE_ANY)
-      To.RepeaterTransition.Initial.Tape.at(TapeHead) = C.Cell ;
-    To.RepeaterTransition.Final.Tape.at(TapeHead) = TM[C.State][C.Cell].Write ;
+    if (To.RepeaterTransition.Initial.Tape[TapeHead] == TAPE_ANY)
+      To.RepeaterTransition.Initial.Tape[TapeHead] = C.Cell ;
+    To.RepeaterTransition.Final.Tape[TapeHead] = TM[C.State][C.Cell].Write ;
     }
   To.RepeaterTransition.Final.State = From.Repeater[From.RepeaterPeriod].State ;
   To.RepeaterTransition.Final.TapeHead = From.Repeater[From.RepeaterPeriod].TapeHead - Leftmost ;
@@ -782,7 +855,7 @@ void BouncerDecider::ConvertRunData (RunDataTransitions& To, const RunData& From
     if (From.Wall[i].TapeHead < Leftmost) Leftmost = From.Wall[i].TapeHead ;
     if (From.Wall[i].TapeHead > Rightmost) Rightmost = From.Wall[i].TapeHead ;
     }
- 
+
   To.WallTransition.Initial.State = From.Wall[0].State ;
   To.WallTransition.Initial.TapeHead = From.Wall[0].TapeHead - Leftmost ;
 
@@ -793,9 +866,9 @@ void BouncerDecider::ConvertRunData (RunDataTransitions& To, const RunData& From
     {
     const Config& C = From.Wall[i] ;
     int TapeHead = C.TapeHead - Leftmost ;
-    if (To.WallTransition.Initial.Tape.at(TapeHead) == TAPE_ANY)
-      To.WallTransition.Initial.Tape.at(TapeHead) = C.Cell ;
-    To.WallTransition.Final.Tape.at(TapeHead) = TM[C.State][C.Cell].Write ;
+    if (To.WallTransition.Initial.Tape[TapeHead] == TAPE_ANY)
+      To.WallTransition.Initial.Tape[TapeHead] = C.Cell ;
+    To.WallTransition.Final.Tape[TapeHead] = TM[C.State][C.Cell].Write ;
     }
 
   To.WallTransition.Final.State = From.Wall[From.WallSteps].State ;
@@ -976,7 +1049,7 @@ void BouncerDecider::PrintTransition (const SegmentTransition& Tr)
   if (Tr.Initial.TapeHead == 0) printf ("[") ;
   for (i = 0 ; i < (int)Tr.Initial.Tape.size() ; i++)
     {
-    printf ("%d", Tr.Initial.Tape.at(i)) ;
+    printf ("%d", Tr.Initial.Tape[i]) ;
     printf (i == Tr.Initial.TapeHead - 1 ? "[" : i == Tr.Initial.TapeHead ? "]" : " ") ;
     }
 
@@ -985,103 +1058,19 @@ void BouncerDecider::PrintTransition (const SegmentTransition& Tr)
   else if (Tr.Final.TapeHead == 0) printf ("[") ;
   for (i = 0 ; i < (int)Tr.Final.Tape.size() ; i++)
     {
-    printf ("%d", Tr.Final.Tape.at(i)) ;
+    printf ("%d", Tr.Final.Tape[i]) ;
     printf (i == Tr.Final.TapeHead - 1 ? "[" : i == Tr.Final.TapeHead ? "]" : " ") ;
     }
   if (i == Tr.Final.TapeHead) printf (" ]") ;
   printf ("\n") ;
   }
 
-// bool BouncerDecider::AnalyseTape_Wall (const TuringMachine* TM, TapeDescriptor& TD,
-//   uint32_t CurrentWall, const SegmentTransition& Tr, int Leftmost, int Rightmost)
-//
-// Called before executing a Wall SegmentTransition
-
-bool BouncerDecider::AnalyseTape_Wall (const TuringMachine* TM, TapeDescriptor& TD,
-  uint32_t CurrentWall, const SegmentTransition& Tr, int Leftmost, int Rightmost)
-  {
-  TD.State = TM -> State ;
-
-  int WallLeftmost[MAX_PARTITIONS + 1] ;
-  int WallRightmost[MAX_PARTITIONS + 1] ;
-
-  for (uint32_t Partition = 0 ; Partition < nPartitions ; Partition++)
-    {
-    const PartitionData& PD = PartitionDataArray[Partition] ;
-    TD.Repeater[Partition].resize (PD.RepeaterShift) ;
-    TD.RepeaterCount[Partition] = PD.RepeaterCount ;
-    }
-
-  // Assign wall boundaries from the left rightwards to the current wall
-  WallLeftmost[0] = TD.Leftmost ;
-  for (uint32_t Wall = 0 ; Wall < CurrentWall ; Wall++)
-    {
-    int SequenceStart, SequenceEnd ;
-    const PartitionData& PD = PartitionDataArray[Wall] ;
-    if (!GetRepeaterExtent_rightward (TM, Wall, SequenceStart, SequenceEnd, Leftmost, Rightmost))
-      {
-      DecrementRepeaterCount (Wall) ;
-      return false ;
-      }
-
-    WallRightmost[Wall] = SequenceStart - 1 ;
-
-    int MinRepeaterLen = PD.RepeaterCount * PD.RepeaterShift ;
-    if (SequenceEnd >= SequenceStart + MinRepeaterLen)
-      SequenceEnd = SequenceStart + MinRepeaterLen - 1 ;
-    Leftmost = WallLeftmost[Wall + 1] = SequenceEnd + 1 ;
-    }
-
-  // Assign wall boundaries from the right leftwards to the current wall
-  WallRightmost[nPartitions] = TD.Rightmost ;
-  for (uint32_t Wall = nPartitions ; Wall > CurrentWall ; Wall--)
-    {
-    int SequenceStart, SequenceEnd ;
-    const PartitionData& PD = PartitionDataArray[Wall - 1] ;
-    if (!GetRepeaterExtent_leftward (TM, Wall - 1, SequenceStart, SequenceEnd, Leftmost, Rightmost))
-      {
-      DecrementRepeaterCount (Wall - 1) ;
-      return false ;
-      }
-
-    WallLeftmost[Wall] = SequenceEnd + 1 ;
-
-    int MinRepeaterLen = PD.RepeaterCount * PD.RepeaterShift ;
-    if (SequenceStart <= SequenceEnd - MinRepeaterLen)
-      SequenceStart = SequenceEnd - MinRepeaterLen + 1 ;
-    Rightmost = WallRightmost[Wall - 1] = SequenceStart - 1 ;
-    }
-
-  for (uint32_t Partition = 0 ; ; Partition++)
-    {
-    if (WallLeftmost[Partition] > WallRightmost[Partition] + 1)
-      {
-      DecrementRepeaterCount (Partition) ;
-      return false ;
-      }
-
-    int WallLen = WallRightmost[Partition] - WallLeftmost[Partition] + 1 ;
-    TD.Wall[Partition].resize (WallLen) ;
-    memcpy (&TD.Wall[Partition][0], &TM -> Tape[WallLeftmost[Partition]], WallLen) ;
-
-    if (Partition == nPartitions) break ;
-
-    const PartitionData& PD = PartitionDataArray[Partition] ;
-    memcpy (&TD.Repeater[Partition][0], &TM -> Tape[WallLeftmost[Partition] + WallLen], PD.RepeaterShift) ;
-    }
-
-  TD.TapeHeadWall = CurrentWall ;
-  TD.TapeHeadOffset = TM -> TapeHead - WallLeftmost[CurrentWall] ;
-
-  return true ;
-  }
-
-// bool BouncerDecider::AnalyseTape_Repeater (const TuringMachine* TM, TapeDescriptor& TD,
+// bool BouncerDecider::AnalyseTape (const TuringMachine* TM, TapeDescriptor& TD,
 //   uint32_t CurrentWall, uint32_t CurrentPartition, const SegmentTransition& Tr, int Leftmost, int Rightmost)
 //
 // Called before executing a Repeater SegmentTransition
 
-bool BouncerDecider::AnalyseTape_Repeater (const TuringMachine* TM, TapeDescriptor& TD,
+BouncerDecider::ORA_Result BouncerDecider::AnalyseTape (const TuringMachine* TM, TapeDescriptor& TD,
   uint32_t CurrentWall, uint32_t CurrentPartition, const SegmentTransition& Tr, int Leftmost, int Rightmost)
   {
   TD.State = TM -> State ;
@@ -1105,10 +1094,7 @@ bool BouncerDecider::AnalyseTape_Repeater (const TuringMachine* TM, TapeDescript
     {
     const PartitionData& PD = PartitionDataArray[Wall] ;
     if (!GetRepeaterExtent_rightward (TM, Wall, SequenceStart, SequenceEnd, Leftmost, Rightmost))
-      {
-      DecrementRepeaterCount (Wall) ;
-      return false ;
-      }
+      return DecrementRepeaterCount (Wall) ;
 
     WallRightmost[Wall] = SequenceStart - 1 ;
 
@@ -1124,10 +1110,7 @@ bool BouncerDecider::AnalyseTape_Repeater (const TuringMachine* TM, TapeDescript
     {
     const PartitionData& PD = PartitionDataArray[Wall - 1] ;
     if (!GetRepeaterExtent_leftward (TM, Wall - 1, SequenceStart, SequenceEnd, Leftmost, Rightmost))
-      {
-      DecrementRepeaterCount (Wall - 1) ;
-      return false ;
-      }
+      return DecrementRepeaterCount (Wall - 1) ;
 
     WallLeftmost[Wall] = SequenceEnd + 1 ;
 
@@ -1146,34 +1129,24 @@ bool BouncerDecider::AnalyseTape_Repeater (const TuringMachine* TM, TapeDescript
     if (Rightmost > TM -> TapeHead + MinRepeaterLen / 2)
       Rightmost = TM -> TapeHead + MinRepeaterLen / 2 ;
     if (!GetRepeaterExtent_leftward (TM, CurrentPartition, SequenceStart, SequenceEnd, Leftmost, Rightmost))
-      {
-      DecrementRepeaterCount (CurrentPartition) ;
-      return false ;
-      }
+      return DecrementRepeaterCount (CurrentPartition) ;
 
     // Adjust SequenceEnd so that Tr.Initial.Tape starts with exactly one repeater
     if (SequenceEnd < TM -> TapeHead - Tr.Initial.TapeHead + PD.RepeaterShift - 1)
       {
       if (CurrentPartition == nPartitions - 1) TM_ERROR() ;
-      DecrementRepeaterCount (CurrentPartition + 1) ;
-      return false ;
+      return DecrementRepeaterCount (CurrentPartition + 1) ;
       }
     SequenceEnd = TM -> TapeHead - Tr.Initial.TapeHead + PD.RepeaterShift - 1 ;
     if (SequenceEnd > WallRightmost[CurrentPartition + 1]) TM_ERROR() ;
 
     if (SequenceEnd < SequenceStart + MinRepeaterLen - 1)
-      {
-      DecrementRepeaterCount (CurrentPartition) ;
-      return false ;
-      }
+      return DecrementRepeaterCount (CurrentPartition) ;
 
     if (CurrentPartition != nPartitions - 1 &&
       (int)Tr.Initial.Tape.size() - Tr.Initial.TapeHead >
         WallRightmost[CurrentPartition + 1] - TM -> TapeHead)
-          {
-          DecrementRepeaterCount (CurrentPartition + 1) ;
-          return false ;
-          }
+          return DecrementRepeaterCount (CurrentPartition + 1) ;
 
     SequenceStart = SequenceEnd - MinRepeaterLen + 1 ;
     }
@@ -1183,32 +1156,22 @@ bool BouncerDecider::AnalyseTape_Repeater (const TuringMachine* TM, TapeDescript
     if (Leftmost < TM -> TapeHead - MinRepeaterLen / 2)
       Leftmost = TM -> TapeHead - MinRepeaterLen / 2 ;
     if (!GetRepeaterExtent_rightward (TM, CurrentPartition, SequenceStart, SequenceEnd, Leftmost, Rightmost))
-      {
-      DecrementRepeaterCount (CurrentPartition) ;
-      return false ;
-      }
+      return DecrementRepeaterCount (CurrentPartition) ;
 
     // Adjust SequenceStart so that Tr.Initial.Tape ends with exactly one repeater
     if (SequenceStart > int(Tr.Initial.Tape.size() - Tr.Initial.TapeHead + TM -> TapeHead - PD.RepeaterShift))
       {
       if (CurrentPartition == 0) TM_ERROR() ;
-      DecrementRepeaterCount (CurrentPartition - 1) ;
-      return false ;
+      return DecrementRepeaterCount (CurrentPartition - 1) ;
       }
     SequenceStart = Tr.Initial.Tape.size() - Tr.Initial.TapeHead + TM -> TapeHead - PD.RepeaterShift ;
     if (SequenceStart < WallLeftmost[CurrentPartition]) TM_ERROR() ;
 
     if (SequenceEnd < SequenceStart + MinRepeaterLen - 1)
-      {
-      DecrementRepeaterCount (CurrentPartition) ;
-      return false ;
-      }
+      return DecrementRepeaterCount (CurrentPartition) ;
 
     if (CurrentPartition && Tr.Initial.TapeHead > TM -> TapeHead - WallLeftmost[CurrentPartition])
-      {
-      DecrementRepeaterCount (CurrentPartition - 1) ;
-      return false ;
-      }
+      return DecrementRepeaterCount (CurrentPartition - 1) ;
 
     SequenceEnd = SequenceStart + MinRepeaterLen - 1 ;
     }
@@ -1219,10 +1182,7 @@ bool BouncerDecider::AnalyseTape_Repeater (const TuringMachine* TM, TapeDescript
   for (uint32_t Partition = 0 ; ; Partition++)
     {
     if (WallLeftmost[Partition] > WallRightmost[Partition] + 1)
-      {
-      DecrementRepeaterCount (Partition) ;
-      return false ;
-      }
+      return DecrementRepeaterCount (Partition) ;
 
     int WallLen = WallRightmost[Partition] - WallLeftmost[Partition] + 1 ;
     TD.Wall[Partition].resize (WallLen) ;
@@ -1237,7 +1197,7 @@ bool BouncerDecider::AnalyseTape_Repeater (const TuringMachine* TM, TapeDescript
   TD.TapeHeadWall = CurrentWall ;
   TD.TapeHeadOffset = TM -> TapeHead - WallLeftmost[CurrentWall] ;
 
-  return true ;
+  return ORA_Result::OK ;
   }
 
 bool BouncerDecider::GetRepeaterExtent_leftward (const TuringMachine* TM, uint32_t Partition,
@@ -1324,15 +1284,18 @@ bool BouncerDecider::GetRepeaterExtent_rightward (const TuringMachine* TM, uint3
     }
   }
 
-// void BouncerDecider::DecrementRepeaterCount (uint32_t Partition)
+// ORA_Result BouncerDecider::DecrementRepeaterCount (uint32_t Partition)
 //
 // Decrement the repeater count for Partition and adjust the destination Wall
+//
+// Returns: ORA_Result::ABORT if the repeater count would fall below 5
+//          ORA_Result::RETRY otherwise
 
-void BouncerDecider::DecrementRepeaterCount (uint32_t Partition)
+BouncerDecider::ORA_Result BouncerDecider::DecrementRepeaterCount (uint32_t Partition)
   {
   // Decrement the repeater count for this partition and request a retry
   PartitionData& PD = PartitionDataArray[Partition] ;
-  if (PD.RepeaterCount < 5) TM_ERROR() ;
+  if (PD.RepeaterCount < 5) return ORA_Result::ABORT ;
   PD.RepeaterCount-- ;
 
   // Adjust all runs in this partition
@@ -1347,6 +1310,7 @@ void BouncerDecider::DecrementRepeaterCount (uint32_t Partition)
       RD.WallSteps += RD.RepeaterPeriod ;
       }
     }
+  return ORA_Result::RETRY ;
   }
 
 uint32_t BouncerDecider::WriteTapeDescriptor (uint8_t* VerificationEntry,
@@ -1397,8 +1361,7 @@ bool BouncerDecider::MakeTranslatedBouncerData()
     TB_Size = Cycle1Leftmost - Leftmost ;
     TB_Outermost = Leftmost ;
     int Shift = Cycle2Leftmost - Cycle1Leftmost ;
-    TB_Repeater = std::vector<uint8_t> (Shift) ;
-    memcpy (&TB_Repeater[0], Tape + Cycle1Leftmost - Shift, Shift) ;
+    TB_Repeater = ustring (Tape + Cycle1Leftmost - Shift, Shift) ;
     int RepeaterLen ;
     for (RepeaterLen = Shift + 1 ; (int)RepeaterLen <= Cycle1Leftmost - Leftmost ; RepeaterLen++)
       if (Tape[Cycle1Leftmost - RepeaterLen] != Tape[Cycle1Leftmost - RepeaterLen + Shift])
@@ -1410,8 +1373,7 @@ bool BouncerDecider::MakeTranslatedBouncerData()
     if (PD.RepeaterCount < 3) return false ;
     RepeaterLen = PD.RepeaterCount * Shift ;
 
-    TB_Wall = std::vector<uint8_t> (Cycle1Leftmost - Leftmost - RepeaterLen) ;
-    memcpy (&TB_Wall[0], Tape + Leftmost, TB_Wall.size()) ;
+    TB_Wall = ustring (Tape + Leftmost, TB_Wall.size()) ;
     }
   else if (TB_Direction == -1) // Translation to the left
     {
@@ -1419,8 +1381,7 @@ bool BouncerDecider::MakeTranslatedBouncerData()
     TB_Size = Rightmost - Cycle1Rightmost ;
     TB_Outermost = Rightmost ;
     int Shift = Cycle1Rightmost - Cycle2Rightmost ;
-    TB_Repeater = std::vector<uint8_t> (Shift) ;
-    memcpy (&TB_Repeater[0], Tape + Cycle1Rightmost + 1, Shift) ;
+    TB_Repeater = ustring (Tape + Cycle1Rightmost + 1, Shift) ;
     int RepeaterLen ;
     for (RepeaterLen = Shift + 1 ; (int)RepeaterLen <= Rightmost - Cycle1Rightmost ; RepeaterLen++)
       if (Tape[Cycle1Rightmost + RepeaterLen] != Tape[Cycle1Rightmost + RepeaterLen - Shift])
@@ -1432,8 +1393,7 @@ bool BouncerDecider::MakeTranslatedBouncerData()
     if (PD.RepeaterCount < 3) return false ;
     RepeaterLen = PD.RepeaterCount * Shift ;
 
-    TB_Wall = std::vector<uint8_t> (Rightmost - Cycle1Rightmost - RepeaterLen) ;
-    memcpy (&TB_Wall[0], Tape + Cycle1Rightmost, TB_Wall.size()) ;
+    TB_Wall = ustring (Tape + Cycle1Rightmost, TB_Wall.size()) ;
     }
   return true ;
   }
@@ -1470,22 +1430,22 @@ bool BouncerDecider::RemoveGap (TapeDescriptor& TD, const SegmentTransition& Tr)
     int Rotate = Gap % Stride ; Rotate = Stride - Rotate ; Rotate %= Stride ;
     if ((int)TD.Wall[Wall - 1].size() < Gap) TM_ERROR() ;
     for (int i = 0 ; i < Gap ; i++)
-      if (TD.Wall[Wall - 1].at(i + TD.Wall[Wall - 1].size() - Gap) !=
-        TD.Repeater[Wall - 1].at((i + Rotate) % Stride))
+      if (TD.Wall[Wall - 1][i + TD.Wall[Wall - 1].size() - Gap] !=
+        TD.Repeater[Wall - 1][(i + Rotate) % Stride])
           TM_ERROR() ;
 
     // Prepend Repeaters to the current wall
     TD.Wall[Wall].insert (TD.Wall[Wall].begin(), Gap, 0) ;
     for (int i = 0 ; i < Gap ; i++)
-      TD.Wall[Wall].at(i) = TD.Repeater[Wall - 1].at((i + Rotate) % Stride) ;
+      TD.Wall[Wall][i] = TD.Repeater[Wall - 1][(i + Rotate) % Stride] ;
 
     // Remove them from the destination wall
     TD.Wall[Wall - 1].erase (TD.Wall[Wall - 1].end() - Gap, TD.Wall[Wall - 1].end()) ;
 
     // Rotate the Repeater accordingly
-    std::vector<uint8_t> Repeater = TD.Repeater[Wall - 1] ;
+    ustring Repeater = TD.Repeater[Wall - 1] ;
     for (uint32_t i = 0 ; i < Repeater.size() ; i++)
-      TD.Repeater[Wall - 1].at(i) = Repeater.at((i + Rotate) % Stride) ;
+      TD.Repeater[Wall - 1][i] = Repeater[(i + Rotate) % Stride] ;
 
     TD.TapeHeadOffset += Gap ;
     }
@@ -1512,20 +1472,20 @@ bool BouncerDecider::RemoveGap (TapeDescriptor& TD, const SegmentTransition& Tr)
     if ((int)TD.Wall[Wall + 1].size() < Gap)
       TM_ERROR() ;
     for (int i = 0 ; i < Gap ; i++)
-      if (TD.Wall[Wall + 1].at(i) != TD.Repeater[Wall].at(i % Stride))
+      if (TD.Wall[Wall + 1][i] != TD.Repeater[Wall][i % Stride])
         TM_ERROR() ;
 
     // Append Repeaters to the current wall
     for (int i = 0 ; i < Gap ; i++)
-      TD.Wall[Wall].push_back (TD.Repeater[Wall].at(i % Stride)) ;
+      TD.Wall[Wall].push_back (TD.Repeater[Wall][i % Stride]) ;
 
     // Remove them from the destination wall
     TD.Wall[Wall + 1].erase (TD.Wall[Wall + 1].begin(), TD.Wall[Wall + 1].begin() + Gap) ;
 
     // Rotate the Repeater accordingly
-    std::vector<uint8_t> Repeater = TD.Repeater[Wall] ;
+    ustring Repeater = TD.Repeater[Wall] ;
     for (uint32_t i = 0 ; i < Repeater.size() ; i++)
-      TD.Repeater[Wall].at(i) = Repeater.at((i + Gap) % Stride) ;
+      TD.Repeater[Wall][i] = Repeater[(i + Gap) % Stride] ;
     }
   return true ;
   }
@@ -1547,25 +1507,25 @@ bool BouncerDecider::TruncateWall (TapeDescriptor& TD, const SegmentTransition& 
     int Overhang = Tr.Initial.TapeHead - TD.TapeHeadOffset ;
     if (Overhang >= 0) return false ;
     Overhang = -Overhang ; // 'Underhang' now
-  
+
     // Check that the remaining wall consists of appropriately aligned copies of the Repeater
     for (int i = 0 ; i < Overhang ; i++)
-      if (TD.Wall[Wall].at(i) != TD.Repeater[Wall - 1].at(i % Stride))
+      if (TD.Wall[Wall][i] != TD.Repeater[Wall - 1][i % Stride])
         TM_ERROR() ;
-  
+
     // Re-align the wall so that the repeaters start immediately to the left of Tr.Initial.Tape
     TD.Wall[Wall - 1].insert (TD.Wall[Wall - 1].end(),
       TD.Wall[Wall].begin(), TD.Wall[Wall].begin() + Overhang) ;
     TD.Wall[Wall].erase (TD.Wall[Wall].begin(), TD.Wall[Wall].begin() + Overhang) ;
-  
+
     // Rotate the Repeater accordingly
-    std::vector<uint8_t> Repeater = TD.Repeater[Wall - 1] ;
+    ustring Repeater = TD.Repeater[Wall - 1] ;
     for (uint32_t i = 0 ; i < Repeater.size() ; i++)
-      TD.Repeater[Wall - 1].at(i) = Repeater.at((i + Overhang) % Stride) ;
-  
+      TD.Repeater[Wall - 1][i] = Repeater[(i + Overhang) % Stride] ;
+
     // This rotated repeater should be an initial segment of Tr.Initial.Tape
     for (uint32_t i = 0 ; i < Repeater.size() ; i++)
-      if (TD.Repeater[Wall - 1].at(i) != Tr.Initial.Tape.at(i))
+      if (TD.Repeater[Wall - 1][i] != Tr.Initial.Tape[i])
         TM_ERROR() ;
 
     TD.TapeHeadOffset -= Overhang ;
@@ -1586,7 +1546,7 @@ bool BouncerDecider::TruncateWall (TapeDescriptor& TD, const SegmentTransition& 
       {
       int t = TD.Wall[Wall].size() - i ;
       t %= Stride ; t = Stride - t ; t %= Stride ;
-      if (TD.Wall[Wall].at(i) != TD.Repeater[Wall].at(t))
+      if (TD.Wall[Wall][i] != TD.Repeater[Wall][t])
         TM_ERROR() ;
       }
 
@@ -1597,14 +1557,426 @@ bool BouncerDecider::TruncateWall (TapeDescriptor& TD, const SegmentTransition& 
     TD.Wall[Wall].resize (InitOffset + Tr.Initial.Tape.size()) ;
 
     // Rotate the Repeater accordingly
-    std::vector<uint8_t> Repeater = TD.Repeater[Wall] ;
+    ustring Repeater = TD.Repeater[Wall] ;
     for (uint32_t i = 0 ; i < Repeater.size() ; i++)
-      TD.Repeater[Wall].at((i + Overhang) % Stride) = Repeater.at(i) ;
+      TD.Repeater[Wall][(i + Overhang) % Stride] = Repeater[i] ;
 
     // This rotated repeater should be a final segment of Tr.Initial.Tape
     for (uint32_t i = 0 ; i < Repeater.size() ; i++)
-      if (TD.Repeater[Wall].at(i) != Tr.Initial.Tape.at(Tr.Initial.Tape.size() - Stride + i))
+      if (TD.Repeater[Wall][i] != Tr.Initial.Tape[Tr.Initial.Tape.size() - Stride + i])
         TM_ERROR() ;
     }
   return true ;
+  }
+
+BouncerDecider::ORA_Result BouncerDecider::ConstructTransitions (TapeDescriptor& InitialTape,
+  uint32_t i, const TapeDescriptor& TD, RunDataTransitions& RDT)
+  {
+  const RunData& RD = RunDataArray[i % nRuns] ;
+  uint32_t RepeaterSize = std::abs (RD.RepeaterShift) ;
+  uint8_t State = TD.State ;
+
+  SegmentTransition& WallTr = RDT.WallTransition ;
+  SegmentTransition& RepTr = RDT.RepeaterTransition ;
+
+  RDT.Partition = TD.TapeHeadWall ;
+  RDT.Direction = RD.Direction ;
+  WallTr.Initial.State = State ;
+  WallTr.nSteps = 0 ;
+  WallTr.Initial.TapeHead = TD.TapeHeadOffset ;
+  uint32_t WallSize = TD.Wall[TD.TapeHeadWall].size() ;
+  uint32_t WindowSize = WallSize + 2 * RepeaterSize ;
+  ustring Window (WindowSize, 0) ;
+
+  WallTr.Initial.Tape = TD.Wall[TD.TapeHeadWall] ;
+
+  if (RD.Direction == 1) // Left-to-right
+    {
+    if (i && WallSize == 0) return MoveRepeaterIntoWall (InitialTape, TD, true) ;
+    int TapeHead = TD.TapeHeadOffset ;
+    if (TapeHead < 0) return MoveRepeaterIntoWall (InitialTape, TD, true) ;
+
+    memcpy (&Window[0], &TD.Wall[TD.TapeHeadWall][0], WallSize) ;
+    memcpy (&Window[WallSize], &TD.Repeater[RD.Partition][0], RepeaterSize) ;
+    memcpy (&Window[WallSize + RepeaterSize], &TD.Repeater[RD.Partition][0], RepeaterSize) ;
+
+    // Execute until we enter the repeater
+    while (TapeHead < (int)WallSize)
+      {
+      // Execute a step
+      uint8_t Cell = Window[TapeHead] ;
+      const Transition& S = TM[State][Cell] ;
+      Window[TapeHead] = S.Write ;
+      if (S.Move)
+        {
+        TapeHead-- ;
+        if (TapeHead < 0) return MoveRepeaterIntoWall (InitialTape, TD, true) ;
+        }
+      else TapeHead++ ;
+      State = S.Next ;
+
+      WallTr.nSteps++ ;
+      }
+    WallTr.Final.Tape = ustring (Window.begin(), Window.begin() + WallSize) ;
+    WallTr.Final.State = State ;
+    WallTr.Final.TapeHead = WallSize ;
+
+    RepTr.Initial.State = State ;
+    RepTr.nSteps = 0 ;
+    RepTr.Initial.Tape = Window ;
+    RepTr.Initial.TapeHead = WallSize ;
+
+    // Execute the repeater
+    int Leftmost = TapeHead ;
+    int Rightmost = TapeHead ;
+    while (RepTr.nSteps < RD.RepeaterPeriod)
+      {
+      // Execute a step
+      uint8_t Cell = Window[TapeHead] ;
+      const Transition& S = TM[State][Cell] ;
+      Window[TapeHead] = S.Write ;
+
+      if (TapeHead > Rightmost) Rightmost = TapeHead ;
+
+      if (S.Move)
+        {
+        TapeHead-- ;
+        if (TapeHead < Leftmost)
+          {
+          if (TapeHead < 0) return MoveRepeaterIntoWall (InitialTape, TD, true) ;
+          Leftmost = TapeHead ;
+          }
+        }
+      else
+        {
+        TapeHead++ ;
+        if (TapeHead >= (int)WindowSize) return MoveRepeaterIntoWall (InitialTape, TD, false) ;
+        }
+      State = S.Next ;
+
+      RepTr.nSteps++ ;
+      }
+
+    // Trim RepTr.Initial to size
+    RepTr.Initial.TapeHead -= Leftmost ;
+    RepTr.Initial.Tape.erase (RepTr.Initial.Tape.begin() + Rightmost + 1, RepTr.Initial.Tape.end()) ;
+    RepTr.Initial.Tape.erase (RepTr.Initial.Tape.begin(), RepTr.Initial.Tape.begin() + Leftmost) ;
+
+    // Copy Window to RepTr.Final
+    RepTr.Final.Tape = ustring (Window.begin() + Leftmost, Window.begin() + Rightmost + 1) ;
+    RepTr.Final.State = State ;
+    RepTr.Final.TapeHead = TapeHead - Leftmost ;
+
+    // If we don't end up at the start of the second repeater and in the same state,
+    // we need to make Wall bigger
+    if (State != RepTr.Initial.State ||
+      RepTr.Final.TapeHead - RepTr.Initial.TapeHead != RD.RepeaterShift)
+        return MoveRepeaterIntoWall (InitialTape, TD, false) ;
+
+    // If RepTr.Final doesn't match with the destination wall, we need to make
+    // the destination wall bigger
+    const ustring& DestWall = TD.Wall[TD.TapeHeadWall + 1] ;
+    if (RepTr.Final.Tape.size() - RepTr.Final.TapeHead > DestWall.size())
+      return MoveRepeaterIntoWall (InitialTape, TD, false) ;
+    for (int i = 0 ; i < (int)RepTr.Final.Tape.size() - RepTr.Final.TapeHead ; i++)
+      if (RepTr.Final.Tape[RepTr.Final.TapeHead + i] != DestWall[i])
+        return MoveRepeaterIntoWall (InitialTape, TD, false) ;
+
+    // If RepTr.Initial doen't follow on from RepTr.Final, we need to make Wall bigger
+    if (!TestFollowOn (RepTr.Initial, RepTr.Final))
+      return MoveRepeaterIntoWall (InitialTape, TD, false) ;
+    }
+  else // Right-to-left
+    {
+    if (i && WallSize == 0) return MoveRepeaterIntoWall (InitialTape, TD, false) ;
+    int TapeHead = 2 * RepeaterSize + TD.TapeHeadOffset ;
+    if (TapeHead >= (int)WindowSize) return MoveRepeaterIntoWall (InitialTape, TD, false) ;
+
+    RDT.Partition-- ;
+
+    memcpy (&Window[0], &TD.Repeater[RD.Partition][0], RepeaterSize) ;
+    memcpy (&Window[RepeaterSize], &TD.Repeater[RD.Partition][0], RepeaterSize) ;
+    memcpy (&Window[2 * RepeaterSize], &TD.Wall[TD.TapeHeadWall][0], WallSize) ;
+
+    // Execute until we enter the repeater
+    while (TapeHead >= (int)(2 * RepeaterSize))
+      {
+      // Execute a step
+      uint8_t Cell = Window[TapeHead] ;
+      const Transition& S = TM[State][Cell] ;
+      Window[TapeHead] = S.Write ;
+      if (S.Move) TapeHead-- ;
+      else
+        {
+        TapeHead++ ;
+        if (TapeHead >= (int)WindowSize) return MoveRepeaterIntoWall (InitialTape, TD, false) ;
+        }
+      State = S.Next ;
+
+      WallTr.nSteps++ ;
+      }
+    WallTr.Final.Tape = ustring (Window.begin() + 2 * RepeaterSize, Window.end()) ;
+    WallTr.Final.State = State ;
+    WallTr.Final.TapeHead = -1 ;
+
+    RepTr.Initial.State = State ;
+    RepTr.nSteps = 0 ;
+    RepTr.Initial.Tape = Window ;
+    RepTr.Initial.TapeHead = 2 * RepeaterSize - 1 ;
+
+    // Execute the repeater
+    int Leftmost = TapeHead ;
+    int Rightmost = TapeHead ;
+    while (RepTr.nSteps < RD.RepeaterPeriod)
+      {
+      // Execute a step
+      uint8_t Cell = Window[TapeHead] ;
+      const Transition& S = TM[State][Cell] ;
+      Window[TapeHead] = S.Write ;
+
+      if (TapeHead < Leftmost) Leftmost = TapeHead ;
+
+      if (S.Move)
+        {
+        TapeHead-- ;
+        if (TapeHead < 0) return MoveRepeaterIntoWall (InitialTape, TD, true) ;
+        }
+      else
+        {
+        TapeHead++ ;
+        if (TapeHead > Rightmost)
+          {
+          if (TapeHead >= (int)WindowSize) return MoveRepeaterIntoWall (InitialTape, TD, false) ;
+          Rightmost = TapeHead ;
+          }
+        }
+      State = S.Next ;
+
+      RepTr.nSteps++ ;
+      }
+
+    // Trim RepTr.Initial to size
+    RepTr.Initial.Tape.erase (RepTr.Initial.Tape.begin() + Rightmost + 1, RepTr.Initial.Tape.end()) ;
+    RepTr.Initial.Tape.erase (RepTr.Initial.Tape.begin(), RepTr.Initial.Tape.begin() + Leftmost) ;
+    RepTr.Initial.TapeHead -= Leftmost ;
+
+    // Copy Window to RepTr.Final
+    RepTr.Final.Tape = ustring (Window.begin() + Leftmost, Window.begin() + Rightmost + 1) ;
+    RepTr.Final.State = State ;
+    RepTr.Final.TapeHead = TapeHead - Leftmost ;
+
+    // If we don't end up at the start of the second repeater and in the same state,
+    // we need to make Wall bigger
+    if (State != RepTr.Initial.State ||
+      RepTr.Final.TapeHead - RepTr.Initial.TapeHead != RD.RepeaterShift)
+        return MoveRepeaterIntoWall (InitialTape, TD, true) ;
+
+    // If RepTr.Final doesn't match with the destination wall, we need to make
+    // the destination wall bigger
+    const ustring& DestWall = TD.Wall[TD.TapeHeadWall - 1] ;
+    if (RepTr.Final.TapeHead >= (int)DestWall.size()) return MoveRepeaterIntoWall (InitialTape, TD, true) ;
+    for (int i = 0 ; i < RepTr.Final.TapeHead ; i++)
+      if (RepTr.Final.Tape[i] != DestWall[DestWall.size() - RepTr.Final.TapeHead + i])
+        return MoveRepeaterIntoWall (InitialTape, TD, true) ;
+
+    // If RepTr.Initial doen't follow on from RepTr.Final, we need to make Wall bigger
+    if (!TestFollowOn (RepTr.Initial, RepTr.Final))
+      return MoveRepeaterIntoWall (InitialTape, TD, true) ;
+    }
+
+  return ORA_Result::OK ;
+  }
+
+void BouncerDecider::CheckTransitions (TapeDescriptor& InitialTape, uint32_t i,
+  TapeDescriptor& TD, const RunDataTransitions& RDT)
+  {
+  //
+  // WallTransition
+  //
+
+  uint32_t WallIndex = TD.TapeHeadWall ;
+  ustring& Wall = TD.Wall[WallIndex] ;
+  const SegmentTransition& WallTr = RDT.WallTransition ;
+  const SegmentTransition& RepTr = RDT.RepeaterTransition ;
+
+  int Shift = RepTr.Final.TapeHead - RepTr.Initial.TapeHead ;
+  if (Shift == 0) TM_ERROR() ;
+
+  // Check that WallTr is a valid transition
+  CheckTransition (WallTr) ;
+
+  // Check that WallTr.Initial matches TD
+  if (WallTr.Initial.Tape != Wall) TM_ERROR() ;
+  if (WallTr.Initial.TapeHead != TD.TapeHeadOffset) TM_ERROR() ;
+  if (WallTr.Initial.State != TD.State) TM_ERROR() ;
+
+  // Update TD according to WallTr
+  Wall = WallTr.Final.Tape ;
+  TD.TapeHeadOffset = WallTr.Final.TapeHead ;
+  TD.State = WallTr.Final.State ;
+
+  // Check that WallTr ends at the first repeater
+  if (Shift > 0) // Left-to-right
+    {
+    if (WallTr.Final.TapeHead != (int)Wall.size()) TM_ERROR() ;
+    }
+  else
+    {
+    if (WallTr.Final.TapeHead != -1) TM_ERROR() ;
+    }
+
+  if (i == 0) InitialTape = TD ;
+
+  //
+  // RepeaterTransition
+  //
+
+  // Check that RepTr is a valid transition
+  CheckTransition (RepTr) ;
+
+  // Preliminary checks
+  if (TD.State != RepTr.Initial.State) TM_ERROR() ;
+  if (RepTr.Initial.State != RepTr.Final.State)
+    TM_ERROR() ;
+
+  // Check the inductive step
+  if (Shift > 0) // Left-to-right
+    {
+    ustring& Rep = TD.Repeater[WallIndex] ;
+    ustring& DestWall = TD.Wall[WallIndex + 1] ;
+
+    // Check that RepTr advances the tape head by Stride cells
+    int Stride = Rep.size() ;
+    if (Stride != RepTr.Final.TapeHead - RepTr.Initial.TapeHead)
+      TM_ERROR() ;
+
+    // Check that RepTr doesn't extend beyond the start of the current wall
+    if (RepTr.Initial.TapeHead > (int)Wall.size()) TM_ERROR() ;
+
+    // Check that RepTr doesn't extend beyond the end of the destination wall
+    if (RepTr.Initial.Tape.size() > RepTr.Final.TapeHead + DestWall.size()) TM_ERROR() ;
+
+    // Decompose RepTr.Initial.Tape as A || Rep || B
+    size_t lenA = RepTr.Initial.TapeHead ;
+    ustring A (RepTr.Initial.Tape.begin(), RepTr.Initial.Tape.begin() + lenA) ;
+    size_t lenB = RepTr.Initial.Tape.size() - lenA - Stride ;
+    ustring B (RepTr.Initial.Tape.end() - lenB, RepTr.Initial.Tape.end()) ;
+
+    // Check that the current wall ends with A
+    if (Wall.size() < lenA) TM_ERROR() ;
+    for (size_t i = 0 ; i < lenA ; i++)
+      if (A[i] != Wall[i + Wall.size() - lenA]) TM_ERROR() ;
+
+    // Check that Rep starts with B
+    if (Rep.size() < lenB) TM_ERROR() ;
+    for (size_t i = 0 ; i < lenB ; i++)
+      if (Rep[i] != B[i]) TM_ERROR() ;
+
+    // Check that the middle section matches Rep
+    for (int i = 0 ; i < Stride ; i++)
+      if (RepTr.Initial.Tape[i + lenA] != Rep[i]) TM_ERROR() ;
+
+    // Check that the destination wall starts with B
+    if (DestWall.size() < lenB) TM_ERROR() ;
+    for (size_t i = 0 ; i < lenB ; i++)
+      if (B[i] != DestWall[i]) TM_ERROR() ;
+
+    // Remove A from Wall
+    Wall.resize (Wall.size() - lenA) ;
+
+    // Replace Rep with initial section of RepTr.Final.Tape
+    Rep = ustring (RepTr.Final.Tape.begin(), RepTr.Final.Tape.begin() + Stride) ;
+
+    // Remove B from Dest
+    DestWall.erase (DestWall.begin(), DestWall.begin() + lenB) ;
+
+    // Insert final section of RepTr.Final.Tape in destination wall
+    DestWall.insert (DestWall.begin(), RepTr.Final.Tape.begin() + Stride, RepTr.Final.Tape.end()) ;
+
+    TD.TapeHeadOffset = RepTr.Final.TapeHead - Stride ;
+    TD.TapeHeadWall = WallIndex + 1 ;
+    }
+  else // Right-to-left
+    {
+    ustring& Rep = TD.Repeater[WallIndex - 1] ;
+    ustring& DestWall = TD.Wall[WallIndex - 1] ;
+
+    // Check that RepTr reduces the tape head by Stride cells
+    int Stride = Rep.size() ;
+    if (Stride != RepTr.Initial.TapeHead - RepTr.Final.TapeHead)
+      TM_ERROR() ;
+
+    // Check that RepTr.Initial doesn't extend beyond the end of the current wall
+    if ((int)RepTr.Initial.Tape.size() - RepTr.Initial.TapeHead >
+      (int)Wall.size() - TD.TapeHeadOffset) TM_ERROR() ;
+
+    // Check that RepTr doesn't extend beyond the end of the destination wall
+    if (RepTr.Final.TapeHead > (int)DestWall.size()) TM_ERROR() ;
+
+    // Decompose RepTr.Initial.Tape as A || Rep || B
+    size_t lenA = RepTr.Initial.TapeHead - Stride + 1 ;
+    ustring A (RepTr.Initial.Tape.begin(), RepTr.Initial.Tape.begin() + lenA) ;
+    size_t lenB = RepTr.Initial.Tape.size() - lenA - Stride ;
+    ustring B (RepTr.Initial.Tape.end() - lenB, RepTr.Initial.Tape.end()) ;
+
+    // Check that the current wall starts with B
+    if (Wall.size() < lenB) TM_ERROR() ;
+    for (size_t i = 0 ; i < lenB ; i++)
+      if (Wall[i] != B[i]) TM_ERROR() ;
+
+    // Check that Rep ends with A
+    if (Stride < (int)lenA) TM_ERROR() ;
+    for (size_t i = 0 ; i < lenA ; i++)
+      if (Rep[Stride - lenA + i] != A[i])
+        TM_ERROR() ;
+
+    // Check that the middle section matches Rep
+    for (int i = 0 ; i < Stride ; i++)
+      if (RepTr.Initial.Tape[i + lenA] != Rep[i]) TM_ERROR() ;
+
+    // Check that the destination wall ends with A
+    if (DestWall.size() < lenA) TM_ERROR() ;
+    for (size_t i = 0 ; i < lenA ; i++)
+      if (A[i] != DestWall[i + DestWall.size() - lenA]) TM_ERROR() ;
+
+    // Remove B from Wall
+    Wall.erase (Wall.begin(), Wall.begin() + lenB) ;
+
+    // Replace Rep with final section of RepTr.Final.Tape
+    Rep = ustring (RepTr.Final.Tape.end() - Stride, RepTr.Final.Tape.end()) ;
+
+    // Remove A from Dest
+    DestWall.erase (DestWall.end() - lenA, DestWall.end()) ;
+
+    TD.TapeHeadOffset = DestWall.size() + RepTr.Final.TapeHead ;
+    TD.TapeHeadWall = WallIndex - 1 ;
+
+    // Append initial section of RepTr.Final.Tape to destination wall
+    DestWall.insert (DestWall.end(), RepTr.Final.Tape.begin(), RepTr.Final.Tape.end() - Stride) ;
+    }
+
+  TD.State = RepTr.Final.State ;
+  }
+
+BouncerDecider::ORA_Result BouncerDecider::MoveRepeaterIntoWall (TapeDescriptor& InitialTape,
+  const TapeDescriptor& TD, bool RightHandEnd)
+  {
+  if (RightHandEnd)
+    {
+    if (TD.TapeHeadWall == 0) TM_ERROR() ;
+    ustring& Rep = InitialTape.Repeater[TD.TapeHeadWall - 1] ;
+    InitialTape.Wall[TD.TapeHeadWall].insert (InitialTape.Wall[TD.TapeHeadWall].begin(),
+      Rep.begin(), Rep.end()) ;
+    if (TD.TapeHeadWall == InitialTape.TapeHeadWall) InitialTape.TapeHeadOffset += Rep.size() ;
+    if (--InitialTape.RepeaterCount[TD.TapeHeadWall - 1] < 3) return ORA_Result::ABORT ;
+    }
+  else
+    {
+    if (TD.TapeHeadWall == nPartitions) TM_ERROR() ;
+    ustring& Rep = InitialTape.Repeater[TD.TapeHeadWall] ;
+    InitialTape.Wall[TD.TapeHeadWall].insert (InitialTape.Wall[TD.TapeHeadWall].end(),
+      Rep.begin(), Rep.end()) ;
+    if (--InitialTape.RepeaterCount[TD.TapeHeadWall] < 3) return ORA_Result::ABORT ;
+    }
+  return ORA_Result::RETRY ;
   }

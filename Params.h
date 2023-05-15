@@ -92,6 +92,7 @@ public:
   virtual void OpenFiles()
     {
     fpInput = 0 ; // Not used in Verifiers
+    CommonParams::OpenFiles() ;
     fpVerify = OpenFile (VerificationFilename, "rb") ;
     }
 

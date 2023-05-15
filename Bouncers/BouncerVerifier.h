@@ -16,12 +16,9 @@ public:
 
   struct RunDescriptor
     {
-    RunDescriptor (Bouncer* B) : TD0 (B), TD1 (B) { }
     uint32_t Partition ;
     SegmentTransition RepeaterTransition ;
-    TapeDescriptor TD0 ;
     SegmentTransition WallTransition ;
-    TapeDescriptor TD1 ;
     } ;
 
   void Verify (FILE* fp) ;
@@ -30,9 +27,15 @@ public:
   void ReadRunDescriptor (FILE* fp, RunDescriptor& RD) ;
   void ReadTransition (FILE* fp, SegmentTransition& Tr) ;
   void ReadSegment (FILE* fp, Segment& Seg) ;
-  void ReadByteArray (FILE* fp, std::vector<uint8_t>& Data) ;
+  void ReadByteArray (FILE* fp, ustring& Data) ;
   void ReadTapeDescriptor (FILE* fp, TapeDescriptor& TD) ;
 
+  void CheckWallTransition (TapeDescriptor& TD, const SegmentTransition& Tr, bool Final) ;
+  void CheckRepeaterTransition (uint32_t Partition,TapeDescriptor& TD,
+    const SegmentTransition& Tr) ;
+
+  virtual bool Verifying() const override { return true ; }
+
   uint32_t RepeaterCount[MAX_PARTITIONS] ;
-  int TapeLeftmost, TapeRightmost ;
+  int FinalLeftmost, FinalRightmost ;
   } ;
