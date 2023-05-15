@@ -92,12 +92,12 @@ dvf:
 
 VerificationEntry:
   uint SeedDatabaseIndex
-  uint DeciderTag = BOUNCER (6)
+  uint DeciderTag = NEW_BOUNCER (7) -- BOUNCER (6) is obsolete
   uint VerifInfoLength -- length of VerificationInfo
   VerificationInfo
 
 VerificationInfo: -- information required to verify a perticular Bouncer
-  byte BouncerType  -- Unilateral=1, Bilateral=2, Translated=3
+  byte BouncerType  -- Unilateral=1, Bilateral=2, Translated=3 (just for info -- not checked)
   ubyte nPartitions -- usually 1, but can be up to 4 (so far)
   ushort nRuns      -- usually 2, but can be up to 156 (so far)
 
@@ -117,9 +117,7 @@ VerificationInfo: -- information required to verify a perticular Bouncer
 RunDescriptor:
   ubyte Partition -- Partiton which the Repeaters traverse
   Transition RepeaterTransition
-  TapeDescriptor TD0 -- Tape contents and state after executing the RepeaterTransitions
   Transition WallTransition
-  TapeDescriptor TD1 -- Tape contents and state after executing the WallTransition
 
 Transition: -- defines a transition from an initial tape segment to a final tape segment
   ushort nSteps
@@ -148,11 +146,7 @@ ByteArray:
 
 #### The Verification Process
 
-There are two levels of verification, which I call the *Sanity Check* and the *Inductive Proof*:
-- The Sanity Check executes each `Transition` in turn in a Turing Machine, and checks that the resulting machine configuration is accurately described by the associated `TapeDescriptor`. This process is only valid for the specific Cycle, with its specific `RepeaterCount` values; but it is a reassuring first step for anybody planning to write their own Verifier.
-- The Inductive Proof also analyses the `Transitions` and `TapeDescriptors` to verify that they are valid for any values of the `RepeaterCount` array that are at least as large as those in the current Cycle. This lets us conclude that the Cycle will repeat indefinitely.
-
-These two procedures can be performed independently. The program `VerifyBouncers.exe` performs them in parallel, so that it can process the Decider Verification File in a single pass without having to read the Verification Info into memory.
+The process basically consists of maintaining a Turing Machine `TM` and a `TapeDescriptor TD` as you execute the runs in a cycle, according to the `RunDescriptor` entries. At the end of the cycle, you check that the resulting `TD` faithfully describes the final `TM`.
 
 The program `VerifyBouncers.exe` is compiled from:
 - `VerifyBouncers.cpp`, which handles command-line arguments, memory allocation, and file I/O;
@@ -162,10 +156,99 @@ The program `VerifyBouncers.exe` is compiled from:
 All functions referenced in the following description can be found in `Bouncer.cpp`.
 
 ##### 1. Initialisation
-Run the machine for `InitialSteps` steps. Check that `InitialLeftmost` and `InitialRightmost` are correct (this is important to distinguish Bouncers from Bells). Check that `InitialTape` accurately describes the machine (state, tape head, and tape) (function `CheckTape`).
+- Read `SeedDatabaseIndex, DeciderTag, VerifInfoLength`. Check that `DeciderTag` is `NEW_BOUNCER (7)` and initialse `TM` from `SeedDatabaseIndex`.<br>
+- Read `BouncerType, nPartitions, nRuns` and check that they are within bounds (see description above). Set *N*=`nPartitions`.<br>
+- Read `InitialSteps, InitialLeftmost, InitialRightmost`; execute `InitialSteps` steps in `TM` and check that `InitialLeftmost, InitialRightmost` are correct (this check is important to distinguish Bouncers from Bells).<br>
+- Read the `RepeaterCount` array *C*<sub>0</sub>,...,*C*<sub>*N*-1</sub>.<br>
+- Read `InitialTape` and check that it accurately describes `TM` (function `CheckTape`).
 
-##### 2. Per-Transition Verification (Inductive Proof only)
-For each `RepeaterTransition` and `WallTransition`, verify that executing `nSteps` from the `Initial` segment takes you to the `Final` segment, without leaving the segment boundaries (function `CheckTransition`).
+##### 2. RunDescriptor Verification
+For each `RunDescriptor`, read `Partition, RepeaterTransition,` and `WallTransition`, and perform 2(a) to check `RepeaterTransition` and 2(b) to check `WallTransition`.
+
+##### 2(a). RepeaterTransition
+`RunDescriptor` can describe a left-to-right run or a right-to-left run. The verification process is conceptually the same for each, but we describe them separately for clarity. If `Partition` is equal to `TD.TapeHeadWall` the run is from left to right; if `Partition` is equal to `TD.TapeHeadWall - 1` the run is from right to left. Other values of `Partition` are not allowed.
+
+We use `Stride` to denote the size of the repeating segment `TD.Repeater[Partition]`.
+
+**Left-to-right**<br>
+The tape head moves from the source wall *W*<sub>src</sub> =`TD.Wall[TD.TapeHeadWall]` to the destination wall *W*<sub>dest</sub> =`TD.Wall[TD.TapeHeadWall+1]` via the array of repeaters *Rep*<sup>*C*<sub>*P*</sub></sup>, where *p*=`Partition` and *Rep* =`TD.Repeater[Partition]`.<br>
+Check that:
+- `RepeaterTransition.Initial.State = RepeaterTransition.Final.State = TD.State`;
+- `RepeaterTransition.Final.TapeHead = RepeaterTransition.Initial.TapeHad + Stride`;
+- executing `RepeaterTransition.nSteps` steps transforms `RepeaterTransition.Initial` into `RepeaterTransition.Final` without leaving the tape segment except on the very last step.
+
+Decompose `Tr.Initial.Tape` into three parts *A* || *R* || *B*, where |*A*|=`Tr.Initial.TapeHead` and |*Rep*|=`Stride`. (*A* and/or *B* can be empty.) To see what's going on, we can align *A* || *R* || *B* with the tape like this:
+```
+[W_src] [Rep] [W_dest]
+  [ A ] [ R ] [ B ]
+```
+First, check that
+- *A* matches the right-hand end of *W*<sub>src</sub>;
+- *R* is equal to *Rep*;
+- *B* matches the left-hand end of *W*<sub>dest</sub>;
+- executing `RepeaterTransition.nSteps` steps transforms `RepeaterTransition.Initial` into `RepeaterTransition.Final` without leaving the tape segment except on the very last step.
+
+Decompose `RepeaterTransition.Final` into *R'* || *A'* || *B*, where |*R'*|=|*R*| and |*A'*|=|*A*|. Note that *B* is unchanged (this should be checked).
+
+So now we see that executing `RepeaterTransition` has the following consequences:
+- *W*<sub>src</sub> loses |*A*| bytes from its right-hand end;
+- *Rep* becomes *Rep'*;
+- *W*<sub>dest</sub> has |*A'*| inserted at its left-hand end.
+
+Make these changes to `TD.Wall[TD.TapeHeadOffset], TD.Repeater[Partition],` and `TD.Wall[TD.TapeHeadOffset + 1]`, and set:
+- `TD.State = RepeaterTransition.Final.State`
+- `TD.TapeHeadWall = Partition + 1`
+- `TD.TapeHeadOffset = `|*A*|.
+
+Now execute `RepeaterTransition.nSteps` steps in `TM`, and check that `TD` accurately describes the resulting `TM`.
+
+**Right-to-left**<br>
+The tape head moves from the source wall *W*<sub>src</sub> =`TD.Wall[TD.TapeHeadWall]` to the destination wall *W*<sub>dest</sub> =`TD.Wall[TD.TapeHeadWall-1]` via the array of repeaters *Rep*<sup>*C*<sub>*P*</sub></sup>, where *p*=`Partition` and *Rep* =`TD.Repeater[Partition]`.<br>
+Check that:
+- `RepeaterTransition.Initial.State = RepeaterTransition.Final.State = TD.State`;
+- `RepeaterTransition.Initial.TapeHead = RepeaterTransition.Final.TapeHad + Stride`;
+- executing `RepeaterTransition.nSteps` steps transforms `RepeaterTransition.Initial` into `RepeaterTransition.Final` without leaving the tape segment except on the very last step.
+
+Decompose `Tr.Initial.Tape` into three parts *A* || *R* || *B*, where |*A*|=`Tr.Final.TapeHead` and |*Rep*|=`Stride`. (*A* and/or *B* can be empty.) To see what's going on, we can align *A* || *R* || *B* with the tape like this:
+```
+[W_dest] [Rep] [W_src]
+   [ A ] [ R ] [ B ]
+```
+First, check that
+- *A* matches the right-hand end of *W*<sub>dest</sub>;
+- *R* is equal to *Rep*;
+- *B* matches the left-hand end of *W*<sub>src</sub>;
+- executing `RepeaterTransition.nSteps` steps transforms `RepeaterTransition.Initial` into `RepeaterTransition.Final` without leaving the tape segment except on the very last step.
+
+Decompose `RepeaterTransition.Final` into *A* || *B'* || *Rep'*, where |*R'*|=|*R*| and |*B'*|=|*B*|. Note that *A* is unchanged (this should be checked).
+
+So now we see that executing `RepeaterTransition` has the following consequences:
+- *W*<sub>src</sub> loses |*B*| bytes from its left-hand end;
+- *Rep* becomes *Rep'*;
+- *W*<sub>dest</sub> has |*B'*| appended to its right-hand end.
+
+Make these changes to `TD.Wall[TD.TapeHeadOffset], TD.Repeater[Partition],` and `TD.Wall[TD.TapeHeadOffset - 1]`, and set:
+- `TD.State = RepeaterTransition.Final.State`
+- `TD.TapeHeadWall = Partition`
+- `TD.TapeHeadOffset = `the original size of *W*<sub>dest</sub>.
+
+Now execute `RepeaterTransition.nSteps` steps in `TM`, and check that `TD` accurately describes the resulting `TM`.
+
+##### 2(b). WallTransition
+`WallTransition` describes the transition to apply to `TD.Wall[TD.TapeHeadWall]`.<br>
+Check that:
+- `WallTransition.Initial.State = TD.State`;
+- `WallTransition.Initial.Tape` matches `TD.Wall[TD.TapeHeadWall]` byte for byte;
+- `WallTransition.Initial.TapeHead` is equal to `TD.TapeHeadOffset`;
+- executing `WallTransition.nSteps` steps transforms `WallTransition.Initial` into `WallTransition.Final` without leaving the tape segment except on the very last step;
+- the last step leaves the tape segment to the left or the right.
+
+Update `TD`:
+- set `TD.State = WallTransition.Final.State;
+- set `TD.Wall[TD.TapeHeadWall] = Tr.Final.Tape`;
+- set `TD.TapeHeadOffset = Tr.Final.TapeHead`.
+
+Now execute `WallTransition.nSteps` steps in `TM`, and check that `TD` accurately describes the resulting `TM`.
 
 ##### 3. Inter-Transition Verification (Inductive Proof only)
 We say that `Transition Tr2` *follows on from* `Transition Tr1` if:
@@ -181,88 +264,7 @@ and check that the overlap is the same (`1[1]01`) in both tapes (function `Check
 
 Now check that for each `RunDescriptor`, `RepeaterTransition` follows on from itself; and `WallTransition` follows on from `RepeaterTransition`. And check that for each `RunDescriptor` except the first, `RepeaterTransition` follows on from `WallTransition` from the previous `RunDescriptor`. And to complete the Cycle, check that the `RepeaterTransition` of the first `RunDescriptor` follows on from the `WallTransition` of the last `RunDescriptor` (function `CheckFollowOn`).
 
-##### 4. TapeDescriptor Verification (Sanity Check only)
-For each `RunDescriptor`, execute its `RepeaterTransition` `RepeaterCount[Partition]` times, and check that `TD0` correctly describes the state of the machine; execute its `WallTransition` once, and check that `TD1` correctly describes the state of the machine (function `CheckTape`).
-
-##### 5. Transition Verification (Inductive Proof only)
-For each `RunDescriptor`, check that `RepeaterTransition` transforms the previous tape contents into `TD0`; and check that `WallTransition` transforms `TD0` into `TD1`. To avoid disrupting the flow, these steps are described in detail in the following section (**Transition Verification in Detail**).
-
 ##### 6. Complete the Cycle
 `TapeDescriptor TD1` in the last `RunDescriptor` describes the state of the machine after it has executed all the `Transitions` in the Cycle. Now adjust `InitialTape` by appending a single `Repeater` to each `Wall` (i.e. set `InitialTape.Wall[i] += InitialTape.Repeater[i]` for each partition `i`). After doing this, and adjusting the `Leftmost`, `Rightmost`, and `TapeHeadOffset` fields accordingly (functions `ExpandTapeLeftward` and `ExpandTapeRightward`), `InitialTape` should describe exactly the same tape as `TD1` (function `CheckTapesEquivalent`).
 
 This is enough to conclude that the Cycle repeats indefinitely, and the machine is therefore a genuine Bouncer. (For this conclusion to be valid, it is important to note that the function `CheckTapesEquivalent` checks that two `TapeDescriptors` define the same tape contents for any values of the `RepeaterCount` array that are greater than or equal to the values in the current Cycle.)
-
-#### Transition Verification in Detail
-For each `RunDescriptor`, we have to check that `RepeaterTransition` transforms the previous tape contents into `TD0`; and check that `WallTransition` transforms `TD0` into `TD1`. We describe the procedure for the case that the `Repeater` moves from left to right; the right-to-left case is similar. We start with the simpler case:
-
-##### 1. WallTransition Verification (function `CheckWallTransition`)
-We are given a `TapeDescriptor` `TD0`, of which the relevant part looks like this:
-
-```
-TD0: ...RepL | RepL | RepL | Wall | RepR | RepR | RepR...
-```
-
-and a `WallTransition` `Tr` whose tape segment may extend outside the boundaries of the `Wall`:
-
-```
-TD0: ...RepL | RepL | RepL | Wall | RepR | RepR | RepR...
-Tr:                     | Tr.Initial |
-```
-
-The position of `Tr.Initial` relative to `Wall` is determined by the tape head positions `Tr.Initial.TapeHead` and `TD0.TapeHeadOffset`.
-
-Check that `Tr.Initial.State` is equal to `TD0.State`.
-
-Expand `Wall` so that it entirely contains `Tr.Initial`, by incorporating a whole number of `RepL` and/or `RepR` repreaters:
-
-```
-TD0: ...RepL | RepL |        Wall'       | RepR | RepR...
-Tr:                     | Tr.Initial |
-```
-
-When we do this, we have to apply the same procedure to `TD1` so that their `RepeaterCounts` remain in synch. The functions `ExpandWallsLeftward` and `ExpandWallsRightward` perform these expansions.
-
-Now we check that `Tr.Initial` matches `Wall'` where they overlap; and we overwrite this overlapping region of `Wall'` with `Tr.Final`, updating the `TD0.State` and `TD0.TapeHeadOffset` accordingly.
-
-Finally we check that this transformed `TD0` describes the same tape, state, and tape head as `TD1` (function `CheckTapesEquivalent`).
-
-##### 2. RepeaterTransition Verification (function `CheckRepeaterTransition`)
-We are given a `RepeaterTransition` `Tr`, and a `TapeDescriptor` `TD0`, of which the relevant part looks like this:
-
-```
-TD0: ...WallL | Rep | Rep |...| Rep | Rep | WallR...
-```
-where `Rep` is repeated `n` times.
-
-Check that `Tr.Initial.State` is equal to `TD0.State`. As with `WallTransition`, we align `Tr` with `WallL` by matching `Tr.Initial.TapeHead` with `TD0.TapeHeadOffset`. When we do this, `Tr.Initial.Tape` should start inside `WallL`, and end at the end of the first repeater:
-
-```
-TD0: ...WallL | Rep | Rep |...| Rep | Rep | WallR...
-Tr:    | Tr.Initial |
-```
-
-Let `d` be the size of `Rep`; check that this is equal to `Tr.Final.TapeHead - Tr.Initial.TapeHead` (in the C++ code, this is the *Stride* of `Tr`).
-
-Check that `Tr.Initial.Tape` agrees with `WallL` where they overlap, and that the last `d` bytes of `Tr.Initial.Tape` are equal to `Rep`.
-
-Now we can express `Tr.Initial.Tape` as `A | Rep`, where `A` equals the right-hand end of `WallL`. And we can express `Tr.Final.Tape` as `Rep' | B` where `Rep'` has size `d`. So `Tr` transforms the tape segment `A | Rep` to the tape segment `Rep' | B`, while advancing the tape head by `d` cells and leaving the machine state unchanged.
-
-So when we execute `Transition Tr` `n` times, we go from this:
-
-```
-TD0: ...WallL | Rep | Rep |...| Rep | Rep | WallR...
-```
-to this:
-```
-TD0: ...WallL' | Rep' | Rep' |...| Rep' | Rep' | B | WallR...
-```
-where `WallL'` is `WallL` with `A` removed from the end.
-
-So, in brief, modify `TD0` by:
-
-- removing `A` from `WallL` ;
-- replacing `Rep` with `Rep'` ;
-- prepending `B` to `WallR` ;
-- adjusting `TapeHeadWall` and `TapeHeadOffset`.
-
-Now we just have to check that the resulting `TapeDescriptor TD0` describes the same tape, state, and tape head as `TD1` (function `CheckTapesEquivalent`).
