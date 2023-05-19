@@ -6,11 +6,10 @@
 
 #include <time.h>
 #include <string>
-#include <vector>
 
 #include "../bbchallenge.h"
-#include "FAR.h"
 #include "../Params.h"
+#include "FAR.h"
 
 //
 // Command-line parameters

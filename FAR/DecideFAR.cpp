@@ -15,11 +15,18 @@
 #include <ctype.h>
 #include <string>
 #include <vector>
-#include <thread>
 #include <mutex>
 
 #include "FAR.h"
 #include "../Params.h"
+
+#if NEED_BOOST_THREADS
+  #include <boost/thread.hpp>
+  using boost::thread ;
+#else
+  #include <thread>
+  using std::thread ;
+#endif
 
 std::mutex RangeMutex ;
 static uint32_t TotalAssigned = 0 ;
@@ -89,9 +96,9 @@ int main (int argc, char** argv)
   if (Params.nThreads == 1) ThreadFunction() ;
   else
     {
-    std::vector<std::thread*> ThreadList (Params.nThreads) ;
+    std::vector<thread*> ThreadList (Params.nThreads) ;
     for (uint32_t i = 0 ; i < Params.nThreads ; i++)
-      ThreadList[i] = new std::thread (ThreadFunction) ;
+      ThreadList[i] = new thread (ThreadFunction) ;
     for (uint32_t i = 0 ; i < Params.nThreads ; i++)
       {
       ThreadList[i] -> join() ; // Wait for thread i to finish

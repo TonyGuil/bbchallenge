@@ -123,9 +123,20 @@ void VerifierParams::CheckParameters()
 uint32_t CommonParams::ParseInt (const char* arg, const char* s)
   {
   if (*s == 0) printf ("%s: integer expected\n", arg), exit (1) ;
-  for (int i = 0 ; s[i] ; i++) if (!isdigit (s[i]))
-    printf ("%s: invalid integer\n", arg), exit (1) ;
-  return atoi (s) ;
+  if (s[0] == '0' && toupper (s[1]) == 'X')
+    {
+    // Hex
+    if (s[2] == 0) printf ("%s: integer expected\n", arg), exit (1) ;
+    for (int i = 2 ; s[i] ; i++) if (!isxdigit (s[i]))
+      printf ("%s: invalid integer\n", arg), exit (1) ;
+    return stoi (std::string (s + 2), nullptr, 16) ;
+    }
+  else
+    {
+    for (int i = 0 ; s[i] ; i++) if (!isdigit (s[i]))
+      printf ("%s: invalid integer\n", arg), exit (1) ;
+    return atoi (s) ;
+    }
   }
 
 void CommonParams::PrintHelp() const

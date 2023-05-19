@@ -214,22 +214,3 @@ void FiniteAutomataReduction::ReconstructNFA (const uint8_t* MachineSpec)
     if (R[0][0] * a) printf ("Reproduction failed\n"), exit (1) ;
     }
   }
-
-void FiniteAutomataReduction::DumpDFA()
-  {
-  for (uint32_t i = 0 ; i < DFA_States ; i++)
-    printf ("(%d %d) ", DFA[i][0], DFA[i][1]) ;
-  printf ("\n") ;
-  }
-
-void FiniteAutomataReduction::DumpNFA()
-  {
-  int nDigits = (NFA_States + 3) >> 2 ;
-  for (uint32_t r = 0 ; r <= 1 ; r++)
-    {
-    for (uint32_t i = 0 ; i < NFA_States ; i++)
-      printf ("%0*llX ", nDigits, R[r][i].d[0]) ;
-    printf ("\n") ;
-    }
-  printf ("%0*llX\n", nDigits, a.d[0]) ;
-  }

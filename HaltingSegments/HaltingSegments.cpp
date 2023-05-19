@@ -1,4 +1,5 @@
 // HaltingSegments <param> <param>...
+//
 //   <param>: -N<states>            Machine states (2, 3, 4, 5, or 6)
 //            -D<database>          Seed database file (defaults to ../SeedDatabase.bin)
 //            -V<verification file> Output file: verification data for decided machines
@@ -27,10 +28,17 @@
 #include <string>
 #include <vector>
 #include <set>
-#include <thread>
 
 #include "../TuringMachine.h"
 #include "../Params.h"
+
+#if NEED_BOOST_THREADS
+  #include <boost/thread.hpp>
+  using boost::thread ;
+#else
+  #include <thread>
+  using std::thread ;
+#endif
 
 // Number of machines to assign to each thread
 #define DEFAULT_CHUNK_SIZE 256
@@ -258,7 +266,7 @@ int main (int argc, char** argv)
       printf ("nThreads = %d\n", Params.nThreads) ;
       }
     }
-  std::vector<std::thread*> ThreadList (Params.nThreads) ;
+  std::vector<thread*> ThreadList (Params.nThreads) ;
 
   clock_t Timer = clock() ;
 
@@ -305,7 +313,7 @@ int main (int argc, char** argv)
       // Run inline if single thread (for ease of debugging)
       if (Params.nThreads == 1) DeciderArray[i] -> ThreadFunction (ChunkSizeArray[i],
         MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i]) ;
-      else ThreadList[i] = new std::thread (&HaltingSegment::ThreadFunction, DeciderArray[i],
+      else ThreadList[i] = new thread (&HaltingSegment::ThreadFunction, DeciderArray[i],
         ChunkSizeArray[i], MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i]) ;
       }
 

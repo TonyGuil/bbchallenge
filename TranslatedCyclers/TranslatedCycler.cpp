@@ -26,6 +26,7 @@
 // is simply matched. This saves us a lot of time.
 
 #include "TranslatedCycler.h"
+#include <inttypes.h> // for PRIu64
 
 bool TranslatedCycler::Run (const uint8_t* MachineSpec, uint8_t* VerificationEntry)
   {

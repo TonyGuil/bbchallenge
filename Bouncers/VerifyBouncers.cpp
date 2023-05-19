@@ -11,18 +11,19 @@
 //   ushort nRuns      -- usually 2, but can be up to 156 (so far)
 // 
 //   uint InitialSteps    -- Steps to reach the start of the Cycle
-//   int InitialLeftmost  -- Leftmost cell visited at start of Cycle
-//   int InitialRightmost -- Rightmost cell visited at start of Cycle
+//   int InitialLeftmost  -- Leftmost cell visited up to start of Cycle
+//   int InitialRightmost -- Rightmost cell visited up to start of Cycle
 // 
+//   uint FinalSteps      -- Steps to reach the end of the Cycle
+//   int FinalLeftmost    -- Leftmost cell visited up to end of Cycle
+//   int FinalRightmost   -- Rightmost cell visited up to end of Cycle
+//
 //   ushort RepeaterCount[nPartitions] -- the Repeater count for each partition
 //                                     -- remains constant throughout the cycle
 //   TapeDescriptor InitialTape   -- Tape contents and state at start of Cycle
 //   RunDescriptor RunList[nRuns] -- Definition of each Run
-//
-//   uint FinalSteps      -- Steps to reach the end of the Cycle
-//   int FinalLeftmost    -- Leftmost cell visited at end of Cycle
-//   int FinalRightmost   -- Rightmost cell visited at end of Cycle
-//   TapeDescriptor FinalTape  -- Tape contents and state at end of Cycle
+//   ushort FinalAdjustment       -- Number of repeaters to shift to mae the initial and final tapes match
+//   TapeDescriptor FinalTape     -- Tape contents and state at end of Cycle
 // 
 // RunDescriptor:
 //   ubyte Partition -- Partiton which the Repeaters traverse

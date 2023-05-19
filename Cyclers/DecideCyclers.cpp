@@ -16,12 +16,19 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <time.h>
 #include <vector>
-#include <thread>
+#include <time.h>
 
 #include "../TuringMachine.h"
 #include "../Params.h"
+
+#if NEED_BOOST_THREADS
+  #include <boost/thread.hpp>
+  using boost::thread ;
+#else
+  #include <thread>
+  using std::thread ;
+#endif
 
 #define CHUNK_SIZE 1024 // Number of machines to assign to each thread
 
@@ -133,7 +140,7 @@ int main (int argc, char** argv)
       printf ("nThreads = %d\n", Params.nThreads) ;
       }
     }
-  std::vector<std::thread*> ThreadList (Params.nThreads) ;
+  std::vector<thread*> ThreadList (Params.nThreads) ;
 
   clock_t Timer = clock() ;
 
@@ -177,7 +184,7 @@ int main (int argc, char** argv)
         }
       }
 
-    std::vector<std::thread*> ThreadList (Params.nThreads) ;
+    std::vector<thread*> ThreadList (Params.nThreads) ;
     for (uint32_t i = 0 ; i < Params.nThreads ; i++)
       {
       for (uint32_t j = 0 ; j < ChunkSize[i] ; j++)
@@ -206,7 +213,7 @@ int main (int argc, char** argv)
       // Run inline if single thread (for ease of debugging)
       if (Params.nThreads == 1) CyclerArray[i] -> ThreadFunction (ChunkSize[i],
         MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i]) ;
-      else ThreadList[i] = new std::thread (&Cycler::ThreadFunction,
+      else ThreadList[i] = new thread (&Cycler::ThreadFunction,
         CyclerArray[i], ChunkSize[i], MachineIndexList[i], MachineSpecList[i], VerificationEntryList[i]) ;
       }
 

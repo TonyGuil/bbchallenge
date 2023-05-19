@@ -278,6 +278,7 @@ TryAgain:
 
   TuringMachine TM (MachineStates, SpaceLimit) ;
   int WallOffset = 0 ;
+  uint32_t FinalAdjustment = 0 ;
   for ( ; ; )
     {
     TM = *Clone ;
@@ -353,35 +354,53 @@ TryAgain:
       {
       if (TM.StepCount > StepTarget) return false ;
 
+      int WallLeftmost = TM.TapeHead - TD.TapeHeadOffset ;
+      int WallRightmost = WallLeftmost + TD.Wall[TD.TapeHeadWall].size() - 1 ;
+
       // Execute the last few steps to get back to the start
       WallOffset = TM.TapeHead ;
       RDT.WallTransition.nSteps = StepTarget - TM.StepCount ;
-      int WallLeftmost = TM.TapeHead - TD.TapeHeadOffset ;
-      int WallRightmost = WallLeftmost + TD.Wall[TD.TapeHeadWall].size() - 1 ;
+      int AdjustmentLeftmost = TM.TapeHead ;
+      int AdjustmentRightmost = TM.TapeHead ;
       while (TM.StepCount < StepTarget)
         {
-        if (TD.TapeHeadWall == 0)
-          {
-          if (TM.TapeHead > WallRightmost)
-            {
-            if (MoveRepeaterIntoWall (InitialTape, TD, false) == ORA_Result::ABORT)
-              return false ;
-            break ;
-            }
-          }
-        else
-          {
-          if (TM.TapeHead < WallLeftmost)
-            {
-            if (MoveRepeaterIntoWall (InitialTape, TD, true) == ORA_Result::ABORT)
-              return false ;
-            break ;
-            }
-          }
+        if (TM.TapeHead < AdjustmentLeftmost) AdjustmentLeftmost = TM.TapeHead ;
+        if (TM.TapeHead > AdjustmentRightmost) AdjustmentRightmost = TM.TapeHead ;
         if (TM.Step() != StepResult::OK) TM_ERROR() ;
         }
 
-      if (TM.StepCount == StepTarget) break ;
+      if (TD.TapeHeadWall == 0)
+        {
+        uint32_t Stride = TD.Repeater[0].size() ;
+        if (AdjustmentRightmost > WallRightmost)
+          {
+          FinalAdjustment = (AdjustmentRightmost - WallRightmost + Stride - 1) / Stride ;
+          for (uint32_t j = 0 ; j < FinalAdjustment ; j++)
+            {
+            TD.Wall[0] += TD.Repeater[0] ;
+            if (TD.Wall[1].size() < Stride) return false ;
+            if (!TD.Wall[1].starts_with (TD.Repeater[0])) return false ;
+            TD.Wall[1].erase (0, Stride) ;
+            }
+          }
+        }
+      else
+        {
+        uint32_t Stride = TD.Repeater[nPartitions - 1].size() ;
+        if (AdjustmentLeftmost < WallLeftmost)
+          {
+          FinalAdjustment = (WallLeftmost - AdjustmentLeftmost + Stride - 1) / Stride ;
+          for (uint32_t j = 0 ; j < FinalAdjustment ; j++)
+            {
+            TD.Wall[nPartitions].insert (0, TD.Repeater[nPartitions - 1]) ;
+            if (TD.Wall[nPartitions - 1].size() < Stride) return false ;
+            if (!TD.Wall[nPartitions - 1].ends_with (TD.Repeater[nPartitions - 1])) return false ;
+            TD.Wall[nPartitions - 1].resize (TD.Wall[nPartitions - 1].size() - Stride) ;
+            TD.TapeHeadOffset += Stride ;
+            }
+          }
+        }
+      break ;
       }
     }
 
@@ -416,6 +435,7 @@ TryAgain:
     pFinal += Save32 (VerificationEntry + pFinal, TM.Leftmost) ;
     pFinal += Save32 (VerificationEntry + pFinal, TM.Rightmost) ;
 
+    pVerif += Save16 (VerificationEntry + pVerif, FinalAdjustment) ;
     pVerif += WriteTapeDescriptor (VerificationEntry + pVerif, &TM, TD) ;
     }
 

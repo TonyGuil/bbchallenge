@@ -68,6 +68,38 @@ void BouncerVerifier::Verify (FILE* fp)
     CheckRepeaterTransition (RD.Partition, CurrentTape, RD.RepeaterTransition) ;
     CheckTape (this, CurrentTape) ;
 
+    if (i == nRuns - 1)
+      {
+      if (CurrentTape.TapeHeadWall != 0 && CurrentTape.TapeHeadWall != nPartitions) VERIFY_ERROR() ;
+
+      // The final wall might require adjustment to the repeater boundaries
+      uint32_t FinalAdjustment = Read16u (fp) ;
+      while (FinalAdjustment--)
+        {
+        if (CurrentTape.TapeHeadWall == 0)
+          {
+          // Add a repeater to the current wall
+          CurrentTape.Wall[0] += CurrentTape.Repeater[0] ;
+
+          // Check that the neighbouring wall contains a copy of the repeater, and remove it
+          if (!CurrentTape.Wall[1].starts_with (CurrentTape.Repeater[0])) VERIFY_ERROR() ;
+          CurrentTape.Wall[1].erase (0, CurrentTape.Repeater[0].size()) ;
+          }
+        else
+          {
+          // Add a repeater to the current wall
+          CurrentTape.Wall[nPartitions].insert (0, CurrentTape.Repeater[nPartitions - 1]) ;
+          uint32_t Stride = CurrentTape.Repeater[nPartitions - 1].size() ;
+          CurrentTape.TapeHeadOffset += Stride ;
+
+          // Check that the neighbouring wall contains a copy of the repeater, and remove it
+          ustring& Neighbour = CurrentTape.Wall[nPartitions - 1] ;
+          if (!Neighbour.ends_with (CurrentTape.Repeater[nPartitions - 1])) VERIFY_ERROR() ;
+          Neighbour.resize (Neighbour.size() - Stride) ;
+          }
+        }
+      }
+
     // Execute the Wall steps
     for (uint32_t j = 0 ; j < RD.WallTransition.nSteps ; j++)
       if (Step() != StepResult::OK) VERIFY_ERROR() ;
@@ -126,9 +158,6 @@ void BouncerVerifier::Verify (FILE* fp)
 
 void BouncerVerifier::CheckWallTransition (TapeDescriptor& TD, const SegmentTransition& Tr, bool Final)
   {
-  // Check that Tr is internally consistent
-  CheckTransition (Tr) ;
-
   // Check that Tr.Initial matches TD
   if (TD.State != Tr.Initial.State) TM_ERROR() ;
   ustring& Wall = TD.Wall[TD.TapeHeadWall] ;
@@ -152,9 +181,6 @@ void BouncerVerifier::CheckWallTransition (TapeDescriptor& TD, const SegmentTran
 void BouncerVerifier::CheckRepeaterTransition (uint32_t Partition,
   TapeDescriptor& TD, const SegmentTransition& Tr)
   {
-  // Check that Tr is internally consistent
-  CheckTransition (Tr) ;
-
   if (TD.State != Tr.Initial.State) TM_ERROR() ;
 
   ustring& Repeater = TD.Repeater[Partition] ;
@@ -249,6 +275,7 @@ void BouncerVerifier::ReadTransition (FILE* fp, SegmentTransition& Tr)
   Tr.nSteps = Read16u (fp) ;
   ReadSegment (fp, Tr.Initial) ;
   ReadSegment (fp, Tr.Final) ;
+  CheckTransition (Tr) ;
   }
 
 void BouncerVerifier::ReadSegment (FILE* fp, Segment& Seg)

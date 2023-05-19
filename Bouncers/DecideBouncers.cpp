@@ -20,10 +20,17 @@
 #include <ctype.h>
 #include <string>
 #include <vector>
-#include <thread>
 
 #include "BouncerDecider.h"
 #include "../Params.h"
+
+#if NEED_BOOST_THREADS
+  #include <boost/thread.hpp>
+  using boost::thread ;
+#else
+  #include <thread>
+  using std::thread ;
+#endif
 
 // Number of machines to assign to each thread
 #define DEFAULT_CHUNK_SIZE 256
@@ -82,7 +89,7 @@ int main (int argc, char** argv)
       printf ("nThreads = %d\n", Params.nThreads) ;
       }
     }
-  std::vector<std::thread*> ThreadList (Params.nThreads) ;
+  std::vector<thread*> ThreadList (Params.nThreads) ;
 
   // Make sure the progress indicator updates reasonably often
   if (Params.nThreads * ChunkSize * 50 > Reader.nMachines)
@@ -132,7 +139,7 @@ int main (int argc, char** argv)
         }
       }
 
-    std::vector<std::thread*> ThreadList (Params.nThreads) ;
+    std::vector<thread*> ThreadList (Params.nThreads) ;
     for (uint32_t i = 0 ; i < Params.nThreads ; i++)
       {
       for (uint32_t j = 0 ; j < ChunkSizeArray[i] ; j++)
@@ -142,7 +149,7 @@ int main (int argc, char** argv)
       if (Params.nThreads == 1) DeciderArray[0] -> ThreadFunction (ChunkSizeArray[0],
         MachineIndexList[0], MachineSpecList[0], Reader.MachineSpecSize,
           VerificationEntryList[0], VERIF_AVERAGE_LENGTH * DEFAULT_CHUNK_SIZE) ;
-      else ThreadList[i] = new std::thread (&BouncerDecider::ThreadFunction, DeciderArray[i],
+      else ThreadList[i] = new thread (&BouncerDecider::ThreadFunction, DeciderArray[i],
         ChunkSizeArray[i], MachineIndexList[i], MachineSpecList[i], Reader.MachineSpecSize,
           VerificationEntryList[i], VERIF_AVERAGE_LENGTH * DEFAULT_CHUNK_SIZE) ;
 

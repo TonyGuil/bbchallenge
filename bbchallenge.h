@@ -7,9 +7,15 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <string.h>
 #include <string>
 #include <bit>
+
+// For some reason, the MingW32 g++ compiler 9.2.0 doesn't support threads. So
+// we need to use the boost thread library. To detect this, we use the value
+// of the predefined __cplusplus macro set by compiler switch -std=gnu++2a:
+#define NEED_BOOST_THREADS (__cplusplus == 201709L)
 
 // ustring and ustring_view are std::string and std::string_view for unsigned chars
 typedef std::basic_string<uint8_t> ustring ;

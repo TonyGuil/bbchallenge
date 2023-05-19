@@ -4,6 +4,7 @@
 #pragma once
 
 #include <vector>
+#include <limits.h>
 #include "../TuringMachine.h"
 
 #define MAX_PARTITIONS     8    // #43477769 has 4 partitions

@@ -113,6 +113,8 @@ VerificationInfo: -- information required to verify a perticular Bouncer
                                     -- remains constant throughout the cycle
   TapeDescriptor InitialTape   -- Tape contents and state at start of Cycle
   RunDescriptor RunList[nRuns] -- Definition of each Run
+  ushort FinalAdjustment       -- Number of repeaters to shift to mae the initial and final tapes match
+  TapeDescriptor FinalTape     -- Tape contents and state at end of Cycle
 
 RunDescriptor:
   ubyte Partition -- Partiton which the Repeaters traverse
