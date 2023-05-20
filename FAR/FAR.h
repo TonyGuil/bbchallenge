@@ -71,7 +71,4 @@ public:
   bool TraceOutput ;
 
   uint32_t MachineCount[MaxDFA_States + 1] ; // for reporting statistics
-
-  void DumpDFA() ;
-  void DumpNFA() ;
   } ;

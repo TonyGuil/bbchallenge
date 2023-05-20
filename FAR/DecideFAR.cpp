@@ -15,20 +15,26 @@
 #include <ctype.h>
 #include <string>
 #include <vector>
-#include <mutex>
 
 #include "FAR.h"
 #include "../Params.h"
 
 #if NEED_BOOST_THREADS
   #include <boost/thread.hpp>
+  #include <boost/thread/mutex.hpp>
+  #include <boost/thread/lock_guard.hpp>
   using boost::thread ;
+  using boost::mutex ;
+  using boost::lock_guard ;
 #else
   #include <thread>
+  #include <mutex>
   using std::thread ;
+  using std::mutex ;
+  using std::lock_guard ;
 #endif
 
-std::mutex RangeMutex ;
+mutex RangeMutex ;
 static uint32_t TotalAssigned = 0 ;
 static uint32_t TotalCompleted = 0 ;
 static uint32_t TotalDecided = 0 ;
@@ -203,7 +209,7 @@ static void ThreadFunction()
 static bool GetNextRange (Range& R, uint32_t nCompleted, uint32_t nDecided)
   {
   // Get exclusive access to Range variables
-  std::lock_guard<std::mutex> MutexLock { RangeMutex } ;
+  lock_guard<mutex> MutexLock { RangeMutex } ;
 
   TotalDecided += nDecided ;
   TotalCompleted += nCompleted ;
